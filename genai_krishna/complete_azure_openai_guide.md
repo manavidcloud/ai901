@@ -369,6 +369,193 @@ Design rules to remember:
 * Put **private DNS zones with the network**, because every workload on the VNet depends on them.
 * A real production design starts network-first: VNet, subnets and private DNS zones exist before any AI resource, and the resource is created with public access already disabled (the **Network** tab in Lab 1, Option B).
 
+### Networking facts to remember
+
+#### 1. The Foundry resource is never inside your VNet
+
+It is a platform service that runs on Microsoft-managed infrastructure. Azure does **not** create a VNet or any network components in your subscription for it. You build the network and you control the path to the service.
+
+| | Can you do it? |
+| :--- | :--- |
+| Place the Foundry resource itself inside your VNet or subnet | **No.** It always runs on Microsoft-managed infrastructure |
+| Choose which VNet and subnet can reach it | **Yes.** Create a private endpoint in your subnet (Lab 8) |
+| Block everyone outside your VNet | **Yes.** Set public access to **Disabled** |
+| Allow only specific subnets or IP addresses over the public endpoint | **Yes.** The **Selected networks** option (Lab 8) |
+
+Compare: a VM, AKS nodes or an application gateway **are** deployed into a subnet you choose and take IP addresses from it. Foundry, Storage and AI Search are not; you reach them through a private endpoint.
+
+#### 2. Who builds what
+
+| Piece | Labs | Production |
+| :--- | :--- | :--- |
+| VNet and subnets | You create them (Lab 0) | You or the network team create them first |
+| Foundry resource | Created public, locked down later (Lab 8) | Created with public access **Disabled** from the start |
+| Private endpoint | You add it in Lab 8 | You add it during or right after creation |
+| Private DNS zones, VNet link, DNS record | Created automatically by the private endpoint wizard | Same, or pre-created by the network team |
+| Where the Foundry resource runs | Microsoft's infrastructure | Microsoft's infrastructure |
+
+#### 3. Region rules
+
+Your VM, AKS, database and the Foundry resource do **not** have to be in the same region.
+
+| Pair | Same region required? |
+| :--- | :--- |
+| Private endpoint and its VNet / subnet | **Yes.** This is the only hard rule |
+| Private endpoint and the Foundry resource it points to | No. The endpoint can reach a Foundry resource in any region |
+| VM / AKS and the private endpoint | No, but they must be in the same VNet, or in a VNet peered to it, with the private DNS zones linked to that VNet too. Peering works across regions |
+| VM / AKS / database and the Foundry resource | No |
+
+**Example that works:** VM, AKS and database in a South India VNet. Foundry resource in East US 2, because the model you need is offered there. The private endpoint is created in the South India VNet and points to the East US 2 Foundry resource. Traffic stays on Microsoft's network end to end.
+
+Keep everything in one region when you can, for these reasons:
+
+| Reason | Why it matters |
+| :--- | :--- |
+| **Speed** | Every call crosses the distance between the regions, which adds latency |
+| **Data residency** | Data at rest stays in the Foundry resource's region. If rules say data must stay in one country, a private connection does not fix a resource placed elsewhere |
+| **Cost** | Traffic between regions can carry data transfer charges |
+| **Simplicity** | One region means one place to look when something fails |
+
+In practice, model availability often decides it: the Foundry resource goes where the model you need is offered, and everything else stays close to your users.
+
+#### 4. Your own domain and DNS
+
+* **Your public domain (GoDaddy or any registrar) is not involved in any lab.** Your app calls a Microsoft hostname such as `foundry-genai-lab-<yourname>.openai.azure.com`, not a name on your domain.
+* **A private DNS zone is different from public DNS.** It answers only machines inside your VNet, and tells them the Foundry hostname points to the private IP `10.0.1.x`.
+* **You add no records by hand.** With **Integrate with private DNS zone** set to **Yes**, the private endpoint wizard creates the three `privatelink.*` zones, links them to the VNet and adds the record. Deleting the endpoint removes the record.
+* **The Azure CLI route does not do this.** The CLI block in Lab 8 creates only the endpoint, so use the portal steps for DNS.
+* **You touch your registrar only for your own names**, such as `chat.yourdomain.com` for a web app you host, or a custom sign-in domain for users. Even then the record points to your app, never to the model endpoint.
+
+### Industry best practices for a production setup
+
+These are the practices commonly applied to Azure AI workloads. The "In these labs" column shows where the guide already does it, and where it takes a shortcut.
+
+#### Network
+
+| Practice | Why | In these labs |
+| :--- | :--- | :--- |
+| **Disable public access** and reach the service only through a private endpoint | Removes the internet as a way in | Lab 8 |
+| **Hub-and-spoke network.** A shared hub VNet holds common services; each workload gets its own spoke VNet, peered to the hub | Isolation between workloads, shared services paid for once | Shortcut: one VNet |
+| **Network in its own resource group** (or its own subscription in a large company) | Different owners and lifecycle | Lab 0 |
+| **A dedicated subnet for private endpoints,** separate from app subnets | Clear rules and easier auditing | Lab 0 |
+| **Central private DNS zones,** one set for the whole company, linked to every VNet that needs them | Avoids duplicate zones that give conflicting answers | Lab 8 puts them in the network group |
+| **Network security groups on app subnets,** allowing only the traffic that is needed | Limits what a compromised machine can reach | Not covered |
+| **Use private endpoints for every data service** in the path: Storage and AI Search as well as Foundry | One public service undoes the rest | Shortcut: only Foundry is made private |
+
+#### Identity and access
+
+| Practice | Why | In these labs |
+| :--- | :--- | :--- |
+| **Microsoft Entra ID, never API keys.** Turn key authentication off | Every call is tied to an identity and can be revoked | Lab 6 |
+| **Managed identity for apps** | No secret to store, rotate or leak | Lab 6 explains it |
+| **Least privilege, assigned at the smallest scope,** to groups and not to individuals | Limits damage from a mistake or a stolen account | Lab 14 |
+| **Separate resources for dev, test and production** | Tests never touch production data or quota | Shortcut: one environment |
+
+#### Governance and operations
+
+| Practice | Why | In these labs |
+| :--- | :--- | :--- |
+| **Infrastructure as code** (Bicep or Terraform) instead of portal clicks | Repeatable, reviewable, recoverable | CLI blocks are a first step |
+| **Azure Policy** to block public endpoints, restrict regions and deployment types | Rules enforce themselves | Mentioned in section 6 |
+| **Diagnostic logs to a Log Analytics workspace,** with alerts on errors and throttling | You can see who called what, and when it failed | Not covered |
+| **Delete locks on shared resources** | Prevents accidental loss | Lab 0 |
+| **Tags on every resource** (owner, environment, cost centre) | Cost and ownership stay traceable | Not covered |
+| **Guardrails on every deployment,** with Prompt Shields for indirect attacks when using RAG | Protects against harmful output and prompt injection | Lab 9 |
+| **Plan for model retirement:** pin versions, test the replacement before the date | Models are removed on a schedule | Section 6 |
+| **An AI gateway (Azure API Management) in front of the models** | One place for per-team token limits, logging, and load balancing across deployments or regions | Not covered |
+| **A second region for critical apps** | Survives a regional outage or a capacity shortage | Not covered |
+
+### Cost-effective architecture
+
+Security features are not free. The aim is to pay for the protection the workload needs and nothing more.
+
+#### What each component costs
+
+Relative cost only; check the Azure pricing calculator for figures.
+
+| Component | Cost | Notes |
+| :--- | :--- | :--- |
+| Resource groups, VNet, subnets, peering setup, NSGs, locks, RBAC, Azure Policy | **Free** | Use them freely |
+| Service endpoint with **Selected networks** | **Free** | Restricts access to chosen subnets without a private endpoint |
+| Private DNS zone | **Low** | Small monthly charge per zone |
+| Private endpoint | **Low** | Hourly charge per endpoint, plus a small charge per GB |
+| Model usage on Global Standard | **Low to high** | Depends entirely on the model and volume (section 6) |
+| Log Analytics | **Low to medium** | Billed per GB ingested. Set a retention period and a daily cap |
+| Azure AI Search | **Medium** | Billed per hour whether used or not. Usually the largest fixed cost in a RAG app |
+| API Management | **Medium to high** | Depends on the tier |
+| Jump host access (Azure Bastion) | **Medium** | Billed per hour |
+| Provisioned throughput (PTU) | **High** | Fixed monthly commitment |
+| Azure Firewall | **High** | Large fixed hourly charge. Often the most expensive item in a small setup |
+
+#### Three sizes of architecture
+
+| | Learning (these labs) | Small production, cost-effective | Enterprise |
+| :--- | :--- | :--- | :--- |
+| **Network** | One VNet, used only in Lab 8 | One VNet, two or three subnets | Hub-and-spoke, firewall in the hub |
+| **Access to Foundry** | Public endpoint | Private endpoint, public access disabled | Private endpoint, public access disabled |
+| **Access to Storage and AI Search** | Public | Private endpoints | Private endpoints |
+| **Authentication** | Key, then Entra ID | Entra ID and managed identity only | Entra ID and managed identity only |
+| **Gateway** | None | None, or API Management on a low tier | API Management with token limits per team |
+| **Deployment type** | Global Standard | Global Standard, or Data Zone if rules require | Data Zone or Provisioned, plus Batch |
+| **Regions** | One | One | Two or more |
+| **Logging** | None | Log Analytics with a daily cap | Central logging and security monitoring |
+| **Relative monthly fixed cost** | Near zero when idle | Low to medium | High |
+
+#### Recommended cost-effective production design
+
+One region, one VNet, private endpoints for every data service, no firewall and no gateway until there is a reason for them.
+
+```mermaid
+flowchart LR
+    USERS["Users"]
+
+    subgraph NETRG["rg-network"]
+        subgraph VNET["VNet - one region"]
+            subgraph APPS["snet-apps"]
+                APP["Web app or API<br/>managed identity"]
+            end
+            subgraph PES["snet-private-endpoints"]
+                PE1["Private endpoint<br/>Foundry"]
+                PE2["Private endpoint<br/>AI Search"]
+                PE3["Private endpoint<br/>Storage"]
+            end
+        end
+        DNS["Private DNS zones"]
+    end
+
+    subgraph WLRG["rg-workload"]
+        FR["Foundry resource<br/>Global Standard<br/>small model by default<br/>public access disabled"]
+        SEARCH["Azure AI Search<br/>public access disabled"]
+        BLOB["Storage account<br/>public access disabled"]
+        LOGS["Log Analytics<br/>daily cap set"]
+    end
+
+    USERS -->|"HTTPS"| APP
+    APP --> PE1 --> FR
+    APP --> PE2 --> SEARCH
+    SEARCH --> PE3 --> BLOB
+    APP -.->|"name lookups"| DNS
+    FR -.->|"diagnostic logs"| LOGS
+```
+
+#### Where the savings come from
+
+| Saving | How |
+| :--- | :--- |
+| **Share the network** | One VNet, one set of private DNS zones and one private-endpoint subnet serve every workload |
+| **Share the Foundry resource** | One resource with a project per team (Lab 14) instead of a resource per team, unless hard isolation is required |
+| **Skip the firewall until required** | Private endpoints and NSGs already give strong isolation. Add a firewall when policy demands outbound inspection |
+| **Skip the gateway until required** | Add API Management when several teams share models and you need per-team limits |
+| **Right-size AI Search** | Start on the smallest tier that supports what you need, and share one service across applications |
+| **Stay on Global Standard** | Lowest token price. Move to Data Zone only when residency rules require it, and to Provisioned only when usage is high and steady |
+| **Default to a small model** | Send only hard requests to a larger model, or let `model-router` choose |
+| **Use Batch and caching** | Batch is about half price for work that can wait. Put fixed prompt text first so repeated prefixes are billed at the cached rate |
+| **Keep to one region** | Avoids cross-region data transfer charges and duplicate resources |
+| **Cap everything** | Low tokens-per-minute on deployments, `max_output_tokens` on calls, a daily cap on logs, budget alerts on each resource group |
+| **Turn off what is idle** | Stop or delete test VMs, and delete dev environments that are not in use. Infrastructure as code makes them cheap to recreate |
+
+**Where not to save:** do not keep public access on, use API keys, or skip guardrails to save money. Those are the free or low-cost controls, and they prevent the incidents that cost the most.
+
 ---
 
 ## 1. Core Concepts
