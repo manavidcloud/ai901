@@ -424,12 +424,44 @@ az cognitiveservices account keys list \
    * **Discover route:** select **Discover** in the upper-right navigation, then **Models** in the left pane. This is the full model catalog, with descriptions and comparisons.
 3. Use **Build** when you already know the model you want. Use **Discover** when you want to browse and compare first. Afterwards, your deployed models are always listed under **Build** → **Models**.
 4. Search for **gpt-5.4-mini** and select it.
+   * **Check where it is offered:** on the right side of the model page, find **Availability** and select **View availability**. It shows the regions and deployment types for this model. Confirm your resource's region is listed before you deploy.
+   * **Check what it costs:** the same model page has a **pricing** chart showing the input and output price for this model. This is the live price, so trust it over the numbers in section 6 if they differ, and use it to compare models before you choose one.
 5. Select **Deploy** → **Default settings**. (Choose **Custom settings** if you want to change the deployment name, deployment type or tokens-per-minute limit.)
 6. The portal opens the playground when the deployment succeeds. Note the deployment name: `gpt-5.4-mini`.
 
 ### Deploy the embedding model
 
 Repeat steps 2 to 5 and search for **text-embedding-3-small**. Note the deployment name.
+
+### If the model is not listed or cannot be deployed
+
+Start on the model page itself: on the right side, under **Availability**, select **View availability** to see the regions and deployment types this model is offered in. Then work through these three checks in order.
+
+| Check | What to look at | Fix |
+| :--- | :--- | :--- |
+| **1. Region of your Foundry resource** | Azure portal → your Foundry resource → **Overview** → **Location**. Not every Azure region hosts these models. **Central India is not on the list; South India is.** | The region of a resource cannot be changed. Create a new Foundry resource in a supported region (Lab 1) |
+| **2. Deployment type** | In **Deploy** → **Custom settings**, look at **Deployment type**. `gpt-5.4-mini` is offered as **Global Standard** and **Data Zone Standard** only. It is **not** offered as regional **Standard** in any region | Choose **Global Standard** |
+| **3. Quota of your subscription** | A message about quota or capacity, or the model greyed out. Free trial, student and sponsored subscriptions can have little or no quota for some models | Try the alternates below, lower the tokens-per-minute value, or request quota |
+
+**Regions that offer both lab models as Global Standard** (from Microsoft's region availability table):
+
+| Geography | Regions |
+| :--- | :--- |
+| Americas | Brazil South, Canada Central, Canada East, Central US, East US, **East US 2**, North Central US, South Central US, West US, West US 3 |
+| Europe | France Central, Germany West Central, Italy North, North Europe, Norway East, Poland Central, Spain Central, Sweden Central, Switzerland North, Switzerland West, UK South, West Europe |
+| Asia Pacific | Australia East, Japan East, Korea Central, Southeast Asia, **South India** |
+| Middle East and Africa | South Africa North, UAE North |
+
+**Alternate chat models if `gpt-5.4-mini` will not deploy.** All are offered as Global Standard in the regions above (the two `luna` models are not in North Europe). Deploy one, then change `CHAT_DEPLOYMENT` in `.env` to its name; no other change is needed.
+
+| Model | Price (input / output per 1M tokens) | Note |
+| :--- | :--- | :--- |
+| `gpt-6-luna` | $0.10 / $0.50 | Cheapest. May need a quota request |
+| `gpt-5.4-nano` | $0.20 / $1.25 | Cheapest in the same family as the lab model |
+| `gpt-5.6-luna` | $0.20 / $1.20 | May need a quota request |
+| `gpt-5-mini` | See pricing page | The model Microsoft's own quickstart uses. Not in Canada Central, North Europe or Switzerland West |
+
+The live source of truth for your own subscription is the CLI block below (`az cognitiveservices model list`), or the list the portal shows you under **Deploy a base model**. Full table: [Region availability for Foundry Models sold by Azure](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability).
 
 ### Check both deployments
 
