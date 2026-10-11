@@ -6,7 +6,7 @@ Click a lab to jump to it. Every section has a **⬆ Back to Lab Index** link un
 
 | Lab | What you do | Where | Python? | Extra cost |
 | :--- | :--- | :--- | :---: | :--- |
-| [**Lab 0: Create the Resource Groups, VNet and Subnets**](#lab-0-create-the-resource-groups-vnet-and-subnets) | Prerequisite: build the empty network first | Azure portal | No | None (free) |
+| [**Lab 0: Create the Network Resource Group, VNet and Subnets**](#lab-0-create-the-network-resource-group-vnet-and-subnets) | Prerequisite: build the empty network first | Azure portal | No | None (free) |
 | [**Lab 1: Create the Foundry Resource and Project**](#4-lab-1-create-the-foundry-resource-and-project) | Create the resource, find endpoint and key | Azure portal, Foundry portal | No | None |
 | [**Lab 2: Deploy a Chat Model and an Embedding Model**](#5-lab-2-deploy-a-chat-model-and-an-embedding-model) | Deploy `gpt-5.4-mini` and `text-embedding-3-small` | Foundry portal | No | None until used |
 | [**Lab 3: Test in the Playground and Tune Parameters**](#7-lab-3-test-in-the-playground-and-tune-parameters) | Chat with the model, change settings | Foundry portal | No | Tokens |
@@ -120,7 +120,7 @@ These are Mermaid diagrams. GitHub renders them automatically. In VS Code, insta
 flowchart TD
     subgraph P1["Phase 1: Build the platform (portal only)"]
         direction LR
-        L0["Lab 0<br/>Resource groups, VNet, subnets"] --> L1["Lab 1<br/>Create Foundry resource"] --> L2["Lab 2<br/>Deploy models"] --> L3["Lab 3<br/>Playground"]
+        L0["Lab 0<br/>Network group, VNet, subnets"] --> L1["Lab 1<br/>Create Foundry resource"] --> L2["Lab 2<br/>Deploy models"] --> L3["Lab 3<br/>Playground"]
     end
     subgraph P2["Phase 2: Develop with Python"]
         direction LR
@@ -267,16 +267,15 @@ flowchart LR
 
 Read it as: the app never changes its URL. The private DNS zone makes the same hostname resolve to the private endpoint's IP, and the private endpoint carries the traffic to the Foundry resource over Microsoft's network.
 
-### Lab 0: Create the Resource Groups, VNet and Subnets
+### Lab 0: Create the Network Resource Group, VNet and Subnets
 
-Do this first. It builds the isolated network group and the empty workload group from the target design. Resource groups, a VNet, subnets and a lock are all **free**.
+Do this first. It builds the isolated network group from the target design. The workload group `rg-genai-lab` is not created here; Lab 1 creates it together with the Foundry resource. A resource group, a VNet, subnets and a lock are all **free**.
 
-#### Step 1: Create the two resource groups
+#### Step 1: Create the network resource group
 
 1. **Azure portal** → search **Resource groups** → **+ Create**.
 2. **Subscription:** your subscription. **Resource group:** `rg-genai-network`. **Region:** `East US 2`.
 3. **Review + create** → **Create**.
-4. Repeat with the name `rg-genai-lab`. Leave this one empty for now; Lab 1 fills it.
 
 #### Step 2: Create the virtual network and both subnets in the network group
 
@@ -304,16 +303,14 @@ Nobody, including you, can now delete the VNet by accident. You remove this lock
 | `snet-private-endpoints` | `10.0.1.0/24` | The private endpoint that leads to the Foundry resource | Lab 8 |
 | `snet-apps` | `10.0.2.0/24` | Your backend app, a test VM or AKS nodes: the callers of the model | Lab 8 |
 
-3. Open `rg-genai-lab`. It should be empty.
 
 <details>
-<summary>▶ Azure CLI: create both resource groups, the VNet, both subnets and the lock</summary>
+<summary>▶ Azure CLI: create the network resource group, the VNet, both subnets and the lock</summary>
 
 ```bash
 az login
 
 az group create --name rg-genai-network --location eastus2
-az group create --name rg-genai-lab     --location eastus2
 
 az network vnet create \
     --name vnet-genai-lab \
@@ -450,7 +447,7 @@ You work in two portals:
 3. First visit: in the project dropdown select **Create a new project**. Otherwise: select the project name in the upper-left corner, then **Create new project**.
 4. **Project name:** `genai-lab-project`.
 5. Select **Advanced options**:
-   * **Resource group:** select the existing `rg-genai-lab` from Lab 0.
+   * **Resource group:** create new → `rg-genai-lab`. This is the workload group, separate from `rg-genai-network`.
    * **Location:** `East US 2`.
 6. Select **Create project** and wait for the project overview page.
 
@@ -460,7 +457,7 @@ You work in two portals:
    (or search the top bar for **Microsoft Foundry** → **Create**).
 2. On the **Basics** tab fill in:
    * **Subscription:** your subscription.
-   * **Resource group:** select the existing `rg-genai-lab` from Lab 0.
+   * **Resource group:** **Create new** → `rg-genai-lab`. This is the workload group, separate from `rg-genai-network`.
    * **Region:** `East US 2`.
    * **Name:** `foundry-genai-lab-<yourname>`.
 3. Leave **Network** on **All networks** for now (Lab 8 locks it down). Leave **Identity**, **Encryption** and **Storage** on defaults.
@@ -478,7 +475,7 @@ Needs Azure CLI 2.80.0 or later (`az version`, then `az upgrade` if older).
 ```bash
 az login
 
-# Resource group rg-genai-lab already exists from Lab 0
+az group create --name rg-genai-lab --location eastus2
 
 # --custom-domain must be globally unique. --allow-project-management cannot be changed later.
 az cognitiveservices account create \
@@ -1205,7 +1202,7 @@ By default the endpoint is reachable from the internet (protected by key or Entr
 
 ### Step 1: Confirm the network from Lab 0
 
-The VNet and subnets were created in [Lab 0](#lab-0-create-the-resource-groups-vnet-and-subnets). If you skipped it, do it now.
+The VNet and subnets were created in [Lab 0](#lab-0-create-the-network-resource-group-vnet-and-subnets). If you skipped it, do it now.
 
 1. **Azure portal** → resource group `rg-genai-network` → `vnet-genai-lab` → **Settings** → **Subnets**.
 2. Confirm `snet-private-endpoints` (`10.0.1.0/24`) and `snet-apps` (`10.0.2.0/24`) both exist.
