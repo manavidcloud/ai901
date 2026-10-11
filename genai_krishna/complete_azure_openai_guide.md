@@ -108,7 +108,6 @@ Why the network is kept apart:
 | **Protection** | The network group carries a delete lock and stricter policy without slowing down workload changes |
 
 A workload never lives "inside" the network group. It lives in its own group and only **attaches** to a subnet: the private endpoint and the VM are resources in `rg-genai-lab` whose network cards take an IP from a subnet in `rg-genai-network`.
-```
 
 ### Flow diagrams
 
@@ -984,7 +983,7 @@ In this output `Deprecating` means deprecated (still works) and `Deprecated` mea
 3. Put a persona in the instructions box, for example: `You are an expert AI tutor. Answer in under 120 words.`
 4. Type a prompt and send it.
 5. Change one setting at a time and resend to see its effect.
-6. Select the **Code** tab to get a ready-made code sample for exactly what you just ran.
+6. Select the **Code** tab to get a ready-made Python sample with your endpoint and deployment name already filled in. Lab 4 shows how to turn it into your own script.
 
 ### Parameter reference
 
@@ -1017,57 +1016,82 @@ Temperature and top P are accepted by GPT-6 models. Other reasoning models may r
 | The deployment name `gpt-5.4-mini` | Lab 2 |
 | Public access still enabled on the Foundry resource | Default. It is only switched off in Lab 8 |
 
-**What you will have at the end:** one folder with one settings file and three small scripts.
+**What you will have at the end:** one folder with one settings file and four small scripts, one per sub-lab.
 
 ```
 genai-labs/
 ├── .env               settings: endpoint, key, deployment names (the only file you edit)
 ├── .gitignore         keeps .env out of Git
-├── chat_app.py        Step 6: one question, one answer
-├── chat_followup.py   Step 8: a two-turn conversation
-└── chat_stream.py     Step 9: the answer printed as it is generated
+├── requirements.txt   the packages to install
+├── lab4.1-chat_app_azure_code.py      Lab 4.1: the portal's code, reading from .env
+├── lab4.2-chat_app_custom_prompt.py   Lab 4.2: your own instructions and settings
+├── lab4.3-chat_followup.py            Lab 4.3: a two-turn conversation
+└── lab4.4-chat_stream.py              Lab 4.4: the answer printed as it is generated
 ```
 
 How the code talks to Azure: Azure OpenAI uses the **v1 API**. That means the standard `openai` package, the standard `OpenAI()` client, and a base URL that ends in `/openai/v1`. There is no `api-version` to manage. The recommended call is the **Responses API** (`client.responses.create`).
 
-### Step 1: Create the folder and open it
+### Setup 1: Create the folder and open it
 
 1. Create a folder named `genai-labs` anywhere on your laptop.
 2. Open it in VS Code: **File** → **Open Folder**.
 3. Open a terminal inside it: **Terminal** → **New Terminal**.
 
-### Step 2: Create a virtual environment (recommended)
+### Setup 2: Create and activate a virtual environment (recommended)
 
 A virtual environment keeps this lab's packages separate from the rest of your machine.
 
-Windows (PowerShell):
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-```
-
-macOS or Linux:
+**Create it** (once, from inside the lab folder). Use either tool:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python -m venv .venv      # standard Python
+uv venv                   # or, if you use uv
 ```
 
-Your terminal prompt now starts with `(.venv)`. Activate it again each time you open a new terminal.
+**Activate it.** The command depends on your terminal, not on how the environment was created:
 
-### Step 3: Install the packages
+| Terminal | Activate | Leave |
+| :--- | :--- | :--- |
+| Windows, PowerShell | `.venv\Scripts\Activate.ps1` | `deactivate` |
+| Windows, Git Bash | `source .venv/Scripts/activate` | `deactivate` |
+| macOS or Linux | `source .venv/bin/activate` | `deactivate` |
 
-```bash
-pip install openai python-dotenv
+On Windows the folder is `Scripts`; on macOS and Linux it is `bin`. Activate again each time you open a new terminal.
+
+**Check that it is active.** Any one of these is enough:
+
+| Check | Git Bash, macOS, Linux | PowerShell | Active looks like |
+| :--- | :--- | :--- | :--- |
+| The prompt | Look at it | Look at it | Starts with the environment name in brackets: `(.venv)`, or the folder name such as `(labs)` when uv created it |
+| The variable activation sets | `echo $VIRTUAL_ENV` | `echo $env:VIRTUAL_ENV` | A path ending in `.venv`. Empty means not active |
+| Which Python runs | `which python` | `(Get-Command python).Source` | A path inside `.venv`. Your system Python means not active |
+
+### Setup 3: Install the packages
+
+Create a file named `requirements.txt` in the lab folder with one package per line:
+
 ```
+openai
+python-dotenv
+```
+
+Install from it, using the command that matches how you created the environment:
+
+| Environment created with | Install | Confirm |
+| :--- | :--- | :--- |
+| `python -m venv` | `pip install -r requirements.txt` | `pip list` |
+| `uv venv` | `uv pip install -r requirements.txt` | `uv pip list` |
+
+An environment made by uv has no `pip` inside it. A plain `pip install` there can fall through to your system Python and install the packages in the wrong place, so use `uv pip install`, which always targets `.venv` in the current folder.
+
+After installing, `openai` and `python-dotenv` should appear in the list.
 
 | Package | What it does |
 | :--- | :--- |
 | `openai` | The client that sends requests to the model |
 | `python-dotenv` | Reads the settings in `.env` so no key sits in your code |
 
-### Step 4: Create the `.env` file
+### Setup 4: Create the `.env` file
 
 1. In VS Code select **New File** and name it exactly `.env` (a dot, then `env`, no other extension).
 2. Paste this in and replace the two placeholder values:
@@ -1076,7 +1100,7 @@ pip install openai python-dotenv
 AZURE_OPENAI_BASE_URL="https://foundry-genai-lab-<yourname>.services.ai.azure.com/openai/v1"
 AZURE_OPENAI_API_KEY="paste-KEY-1-here"
 CHAT_DEPLOYMENT="gpt-5.4-mini"
-EMBEDDING_DEPLOYMENT="text-embedding-3-small"
+EMBEDDING_DEPLOYMENT="text-embedding-3-small" # Deployment name which we choose while deploying the embedding if any.
 ```
 
 Where each value comes from:
@@ -1102,7 +1126,7 @@ Where each value comes from:
 
 The model endpoint has two valid host names and both work: `https://<name>.services.ai.azure.com/openai/v1` (what the portal shows) and `https://<name>.openai.azure.com/openai/v1`. Use the one your portal shows.
 
-### Step 5: Keep the key out of Git
+### Setup 5: Keep the key out of Git
 
 Create a file named `.gitignore` in the same folder with these two lines:
 
@@ -1113,9 +1137,65 @@ Create a file named `.gitignore` in the same folder with these two lines:
 
 Never commit a key. If a key is ever exposed, regenerate it under **Keys and Endpoint** → **Regenerate Key 1**.
 
-### Step 6: Create `chat_app.py`
+Setup is now complete. The four sub-labs below each add one script to the same folder and reuse the same `.env`.
 
-**Start from what the portal gives you.** In Lab 3 step 6, the **Code** tab shows a sample like this:
+### Try it in the playground first, then take the code
+
+You do not have to write these scripts from nothing. Everything in Labs 4.1 to 4.4 can be tried in the playground with no code, and the portal hands you the connection code. The working pattern is: **get it right in the playground, copy the code, add the few lines the portal leaves out.**
+
+**Part A: Test each sub-lab in the playground**
+
+1. **Foundry portal** → **Build** → **Models** → select **gpt-5.4-mini**. The chat playground opens.
+2. Work through this table. Each row is one sub-lab, done by hand:
+
+| Sub-lab | Do this in the playground | What to notice |
+| :--- | :--- | :--- |
+| **4.1** One question | Type `What is the capital of France?` and send | A one-line answer. The connection works |
+| **4.2** Instructions and settings | In the instructions box type `You are an expert AI tutor.` In the settings panel lower the reasoning effort and verbosity, if the model offers them. Then send `Explain the role of Azure Private Endpoints in securing LLM deployments.` | The answer follows the role, and gets shorter or longer as you change the settings |
+| **4.3** Follow-up | Without clearing the chat, send `Now explain it to a college freshman.` | The model knows what "it" means. The playground keeps the conversation for you |
+| **4.4** Streaming | Watch any answer appear | The text arrives piece by piece. The playground always streams |
+
+3. Change the instructions and resend until the answers are what you want. This is far quicker than editing and rerunning a script.
+
+**Part B: Take the code**
+
+1. In the same playground select the **Code** tab.
+2. Choose **Python** if a language choice is shown.
+3. Copy the sample. It already contains your endpoint and your deployment name.
+4. Paste it into a new `.py` file in your lab folder.
+
+**Part C: Add what the portal leaves out**
+
+The portal's sample is a working starting point, not a copy of your whole playground session. Check it against this table and add what is missing:
+
+| You set this in the playground | The line to have in your code | Sub-lab |
+| :--- | :--- | :--- |
+| Endpoint, key, deployment name | Read them from `.env` with `load_dotenv()` and `os.environ[...]`. Never leave a real key in the file | 4.1 |
+| The question | `input="..."` | 4.1 |
+| The instructions box | `instructions="You are an expert AI tutor."` | 4.2 |
+| Reasoning effort | `reasoning={"effort": "low"}` | 4.2 |
+| Verbosity | `text={"verbosity": "low"}` | 4.2 |
+| Maximum output | `max_output_tokens=1000` | 4.2 |
+| A follow-up message | A second call with `previous_response_id=first.id` | 4.3 |
+| Answer appearing piece by piece | `stream=True` and a loop over the events | 4.4 |
+| Reading the answer | `response.output_text` | 4.1 |
+
+So the part you never write yourself is the connection (client, endpoint, deployment, the basic call). The additions are single lines, and each one is shown ready to copy in the sub-lab named in the last column.
+
+**When to use which:**
+
+| Use the playground for | Use code for |
+| :--- | :--- |
+| Trying prompts and settings quickly | Your own app, website or chatbot |
+| Comparing models side by side | Processing many inputs in a loop |
+| Showing someone an idea | Reading your files, database or functions |
+| Getting starter code | Tests you can repeat and keep in Git |
+
+### Lab 4.1: Run the portal's code
+
+**File:** `lab4.1-chat_app_azure_code.py`. **Goal:** prove the connection works, using the code Azure gives you.
+
+**1. See what the portal gives you.** In Lab 3 step 6, the **Code** tab shows a sample like this:
 
 ```python
 from openai import OpenAI
@@ -1137,18 +1217,72 @@ response = client.responses.create(
 print(f"answer: {response.output[0]}")
 ```
 
-It works, and it is the minimum needed. The version used in this guide is the same call with six things added:
+It works, and it is the minimum needed. Two things in it are worth changing before you save it:
+
+| Portal code | Change to | Why |
+| :--- | :--- | :--- |
+| Endpoint, deployment name and key typed into the file | Read them from `.env` | No key in your code, and one file configures every lab |
+| `response.output[0]` | `response.output_text` | `output` is a list that can hold a reasoning item before the answer, so `output[0]` may print an object and not the text |
+
+**2. Create `lab4.1-chat_app_azure_code.py`** with the same call and those two changes:
+
+```python
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()  # reads .env in this folder
+
+# All three values come from .env - change them there, not here
+endpoint = os.environ["AZURE_OPENAI_BASE_URL"]
+deployment_name = os.environ["CHAT_DEPLOYMENT"]
+api_key = os.environ["AZURE_OPENAI_API_KEY"]
+
+client = OpenAI(
+    base_url=endpoint,
+    api_key=api_key
+)
+
+response = client.responses.create(
+    model=deployment_name,
+    input="What is the capital of France?",
+)
+
+print(f"answer: {response.output_text}")
+```
+
+**3. Run it:**
+
+```bash
+python lab4.1-chat_app_azure_code.py
+```
+
+**Expected result:** one line, such as `answer: The capital of France is Paris.`
+
+**If it fails:**
+
+| Message | Cause | Fix |
+| :--- | :--- | :--- |
+| `KeyError: 'AZURE_OPENAI_BASE_URL'` | `.env` not found, misnamed (for example `.env.txt`), or in a different folder | Put `.env` next to the script and run the script from that folder |
+| `401` | Wrong or incomplete key | Copy the key again from the model page |
+| `404` | Deployment name wrong, or the URL does not end in `/openai/v1` | Compare both with the **Code** tab in the portal |
+| `ModuleNotFoundError: No module named 'openai'` | Packages not installed, or the virtual environment is not active | Activate `.venv`, then run Setup 3 again |
+| `403` or a connection error | Public access was disabled (Lab 8) | Set networking back to **All networks** |
+
+### Lab 4.2: Add your own instructions and settings
+
+**File:** `lab4.2-chat_app_custom_prompt.py`. **Goal:** control how the model behaves and what a call can cost.
+
+This is the Lab 4.1 call with four parameters added:
 
 | Added | Why |
 | :--- | :--- |
-| `load_dotenv()` and `os.environ[...]` | Endpoint, key and deployment name come from `.env`, so no key is typed into the code and one file configures every lab |
-| `instructions=` | Gives the model a role and rules, kept separate from the user's question |
+| `instructions=` | The role and rules for the model, kept separate from the user's question in `input` |
 | `reasoning={"effort": "low"}` | Less thinking time: faster and cheaper for simple questions |
 | `text={"verbosity": "low"}` | A shorter answer |
 | `max_output_tokens=1000` | A hard cap on what one call can cost |
-| `response.output_text` in place of `response.output[0]` | `output` is a list that can contain a reasoning item before the answer, so `output[0]` may print an object and not the text. `output_text` always gives the answer text |
 
-Create a file named `chat_app.py` and paste this in. You do not need to edit it:
+**1. Create `lab4.2-chat_app_custom_prompt.py`:**
 
 ```python
 import os
@@ -1164,7 +1298,7 @@ client = OpenAI(
 
 response = client.responses.create(
     model=os.environ["CHAT_DEPLOYMENT"],        # deployment name, not model name
-    instructions="You are an expert AI tutor.",
+    instructions="You are an expert AI tutor.", # role and rules for the model
     input="Explain the role of Azure Private Endpoints in securing LLM deployments.",
     reasoning={"effort": "low"},
     text={"verbosity": "low"},
@@ -1174,29 +1308,30 @@ response = client.responses.create(
 print(response.output_text)
 ```
 
-To try your own question, change the `input=` line. To change the persona, change the `instructions=` line.
-
-### Step 7: Run it
+**2. Run it:**
 
 ```bash
-python chat_app.py
+python lab4.2-chat_app_custom_prompt.py
 ```
 
-**Expected result:** a short paragraph explaining private endpoints, printed in the terminal after a few seconds.
+**Expected result:** a short paragraph explaining private endpoints.
 
-If it fails:
+**3. Experiment.** Change one line at a time and run again:
 
-| Message | Cause | Fix |
-| :--- | :--- | :--- |
-| `KeyError: 'AZURE_OPENAI_BASE_URL'` | `.env` not found, misnamed (for example `.env.txt`), or in a different folder | Put `.env` next to `chat_app.py` and run the script from that folder |
-| `401` | Wrong or incomplete key | Copy **KEY 1** again |
-| `404` | Deployment name wrong, or the URL does not end in `/openai/v1` | Compare both with the **Code** tab in the portal |
-| `ModuleNotFoundError: No module named 'openai'` | Packages not installed, or the virtual environment is not active | Activate `.venv`, then run Step 3 again |
-| `403` or a connection error | Public access was disabled (Lab 8) | Set networking back to **All networks** |
+| Change | What to notice |
+| :--- | :--- |
+| `instructions="Answer like a pirate."` | Same facts, different voice |
+| `text={"verbosity": "high"}` | A much longer answer |
+| `reasoning={"effort": "high"}` | Slower, and usually more thorough |
+| `max_output_tokens=50` | The answer is cut short or empty, because the cap also covers reasoning tokens |
 
-### Step 8: Keep a conversation going
+### Lab 4.3: Keep a conversation going
 
-The service stores each response for 30 days, so a follow-up only needs the ID of the previous response. Create `chat_followup.py`:
+**File:** `lab4.3-chat_followup.py`. **Goal:** a second question that depends on the first.
+
+The service stores each response for 30 days, so a follow-up only needs the ID of the previous response.
+
+**1. Create `lab4.3-chat_followup.py`:**
 
 ```python
 import os
@@ -1224,11 +1359,19 @@ second = client.responses.create(
 print("Turn 2:", second.output_text)
 ```
 
-Run `python chat_followup.py`. **Expected result:** two answers, where the second clearly continues from the first even though the second question never mentions private endpoints.
+**2. Run it:**
 
-### Step 9: Stream the answer as it is generated
+```bash
+python lab4.3-chat_followup.py
+```
 
-Streaming prints words as they arrive, which is what a chat interface needs. Create `chat_stream.py`:
+**Expected result:** two answers, where the second clearly continues from the first even though the second question never mentions private endpoints.
+
+### Lab 4.4: Stream the answer as it is generated
+
+**File:** `lab4.4-chat_stream.py`. **Goal:** print words as they arrive, which is what a chat interface needs.
+
+**1. Create `lab4.4-chat_stream.py`:**
 
 ```python
 import os
@@ -1252,16 +1395,23 @@ for event in stream:
 print()
 ```
 
-Run `python chat_stream.py`. **Expected result:** the text appears piece by piece, not all at once.
+**2. Run it:**
+
+```bash
+python lab4.4-chat_stream.py
+```
+
+**Expected result:** the text appears piece by piece, not all at once.
 
 ### Lab 4 checklist
 
-- [ ] `genai-labs` folder created, virtual environment active
-- [ ] `openai` and `python-dotenv` installed
-- [ ] `.env` holds your endpoint, key and deployment names, and is listed in `.gitignore`
-- [ ] `chat_app.py` prints an answer
-- [ ] `chat_followup.py` prints two linked answers
-- [ ] `chat_stream.py` prints the answer piece by piece
+- [ ] Setup: `genai-labs` folder created, virtual environment active (checked with `echo $VIRTUAL_ENV` or the prompt)
+- [ ] Setup: `openai` and `python-dotenv` installed from `requirements.txt`
+- [ ] Setup: `.env` holds your endpoint, key and deployment names, and is listed in `.gitignore`
+- [ ] Lab 4.1: the portal's code prints an answer
+- [ ] Lab 4.2: the script with instructions and settings prints an answer
+- [ ] Lab 4.3: two linked answers are printed
+- [ ] Lab 4.4: the answer is printed piece by piece
 
 Keep this folder. Labs 5, 6, 7, 11, 12 and 13 add more scripts to it and reuse the same `.env`.
 
@@ -1639,7 +1789,7 @@ After this, calls from your laptop fail and calls from inside the VNet succeed, 
 
 ### Step 3: Prove it (optional)
 
-1. From your own machine run `python chat_app.py`. It should now fail with a `403` or connection error.
+1. From your own machine run `python lab4.1-chat_app_azure_code.py`. It should now fail with a `403` or connection error.
 2. To see it work privately, create a small virtual machine in the resource group `rg-genai-lab`, and on its **Networking** tab choose `vnet-genai-lab` and subnet `snet-apps`. Then run `nslookup foundry-genai-lab-<yourname>.openai.azure.com` on it. The answer should be a `10.0.1.x` address.
 
 A VM is billed while it runs. Delete it straight after the test, or skip this step and rely on the failed call from your machine as proof.

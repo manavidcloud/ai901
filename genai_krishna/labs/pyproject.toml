@@ -1,0 +1,20 @@
+[project]
+name = "labs"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "manavidcloud", email = "mohamadabdulnavidcloud@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "openai>=3.29.0",
+    "python-dotenv>=1.2.4",
+]
+
+[project.scripts]
+labs = "labs:main"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
