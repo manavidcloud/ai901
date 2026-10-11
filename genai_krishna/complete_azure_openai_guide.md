@@ -6,7 +6,7 @@ Click a lab to jump to it. Every section has a **⬆ Back to Lab Index** link un
 
 | Lab | What you do | Where | Python? | Extra cost |
 | :--- | :--- | :--- | :---: | :--- |
-| [**Lab 0: Create the Resource Group, VNet and Subnets**](#lab-0-create-the-resource-group-vnet-and-subnets) | Prerequisite: build the empty network first | Azure portal | No | None (free) |
+| [**Lab 0: Create the Resource Groups, VNet and Subnets**](#lab-0-create-the-resource-groups-vnet-and-subnets) | Prerequisite: build the empty network first | Azure portal | No | None (free) |
 | [**Lab 1: Create the Foundry Resource and Project**](#4-lab-1-create-the-foundry-resource-and-project) | Create the resource, find endpoint and key | Azure portal, Foundry portal | No | None |
 | [**Lab 2: Deploy a Chat Model and an Embedding Model**](#5-lab-2-deploy-a-chat-model-and-an-embedding-model) | Deploy `gpt-5.4-mini` and `text-embedding-3-small` | Foundry portal | No | None until used |
 | [**Lab 3: Test in the Playground and Tune Parameters**](#7-lab-3-test-in-the-playground-and-tune-parameters) | Chat with the model, change settings | Foundry portal | No | Tokens |
@@ -43,7 +43,8 @@ Click a lab to jump to it. Every section has a **⬆ Back to Lab Index** link un
 
 | Thing | Value used in this guide |
 | :--- | :--- |
-| Resource group | `rg-genai-lab` |
+| Network resource group | `rg-genai-network` (VNet, subnets, private DNS zones) |
+| Workload resource group | `rg-genai-lab` (Foundry, storage, AI Search, private endpoint) |
 | Region | `eastus2` (any region that offers your model works) |
 | Foundry resource | `foundry-genai-lab-<yourname>` (must be globally unique) |
 | Project | `genai-lab-project` |
@@ -68,25 +69,45 @@ Click a lab to jump to it. Every section has a **⬆ Back to Lab Index** link un
 
 ### Target design
 
-Everything lives in one resource group and one region, so one delete removes it all.
+The design follows the production pattern: **the network is isolated in its own resource group**, separate from the workloads that use it. Both groups are in one region.
 
 ```
-Subscription
-└── Resource group: rg-genai-lab                                  (region: eastus2)
+Subscription                                                       (region: eastus2)
+│
+├── Resource group: rg-genai-network          NETWORK, long-lived, delete-locked
+│   │
+│   ├── Virtual network: vnet-genai-lab  10.0.0.0/16              Lab 0
+│   │   ├── snet-private-endpoints  10.0.1.0/24                   holds private endpoint IPs
+│   │   └── snet-apps               10.0.2.0/24                   holds apps, VMs, AKS nodes
+│   │
+│   └── Private DNS zones (privatelink.*)                          Lab 8
+│
+└── Resource group: rg-genai-lab              WORKLOAD, created and deleted freely
     │
-    ├── Foundry resource: foundry-genai-lab-<yourname>            Labs 1-6, 9, 11-13
-    │   ├── Project: genai-lab-project
+    ├── Foundry resource: foundry-genai-lab-<yourname>            Labs 1-6, 9, 11-14
+    │   ├── Projects: genai-lab-project, chatapp, transapp
     │   ├── Deployment: gpt-5.4-mini
     │   └── Deployment: text-embedding-3-small
     │
     ├── Storage account  (container: docs)                        Lab 7
     ├── Azure AI Search  (Basic tier, index: rag-lab...)          Lab 7
     │
-    └── Virtual network: vnet-genai-lab  10.0.0.0/16              Lab 8 only
-        ├── snet-private-endpoints  10.0.1.0/24
-        │     └── Private endpoint ──> Foundry resource
-        └── snet-apps               10.0.2.0/24
-              └── your app or a test VM (calls the model privately)
+    ├── Private endpoint: pe-foundry-genai-lab                    Lab 8
+    │     └── its network card sits in snet-private-endpoints (other group)
+    └── Test VM (optional)                                        Lab 8
+          └── its network card sits in snet-apps (other group)
+```
+
+Why the network is kept apart:
+
+| Reason | What it means |
+| :--- | :--- |
+| **Different lifecycle** | A VNet lives for years. Workloads are created, replaced and deleted. Deleting `rg-genai-lab` must never take the network with it |
+| **Different owners** | A network team owns `rg-genai-network`. App teams own their workload groups and get no rights on the network group beyond joining a subnet |
+| **Shared use** | One VNet serves many workloads (an AI app, a VM, AKS), each in its own subnet and its own resource group |
+| **Protection** | The network group carries a delete lock and stricter policy without slowing down workload changes |
+
+A workload never lives "inside" the network group. It lives in its own group and only **attaches** to a subnet: the private endpoint and the VM are resources in `rg-genai-lab` whose network cards take an IP from a subnet in `rg-genai-network`.
 ```
 
 ### Flow diagrams
@@ -99,7 +120,7 @@ These are Mermaid diagrams. GitHub renders them automatically. In VS Code, insta
 flowchart TD
     subgraph P1["Phase 1: Build the platform (portal only)"]
         direction LR
-        L0["Lab 0<br/>Resource group, VNet, subnets"] --> L1["Lab 1<br/>Create Foundry resource"] --> L2["Lab 2<br/>Deploy models"] --> L3["Lab 3<br/>Playground"]
+        L0["Lab 0<br/>Resource groups, VNet, subnets"] --> L1["Lab 1<br/>Create Foundry resource"] --> L2["Lab 2<br/>Deploy models"] --> L3["Lab 3<br/>Playground"]
     end
     subgraph P2["Phase 2: Develop with Python"]
         direction LR
@@ -130,7 +151,12 @@ flowchart LR
 
     ENTRA["Microsoft Entra ID<br/>sign-in and RBAC roles<br/>Labs 6 and 14"]
 
-    subgraph RG["Resource group: rg-genai-lab"]
+    subgraph NETRG["Network resource group: rg-genai-network"]
+        NET["VNet, two subnets,<br/>private DNS zones<br/>Lab 0"]
+    end
+
+    subgraph RG["Workload resource group: rg-genai-lab"]
+        PEND["Private endpoint<br/>Lab 8"]
         subgraph FR["Foundry resource - Lab 1"]
             EP["Endpoint<br/>/openai/v1/"]
             GR["Guardrail<br/>Lab 9"]
@@ -156,6 +182,8 @@ flowchart LR
     SEARCH -->|"embed chunks and questions"| EMB
     APP -->|"search with the question"| SEARCH
     RG -.->|"usage and cost"| COST
+    PEND -.->|"takes a private IP from a subnet"| NET
+    PEND -->|"Private Link"| EP
 ```
 
 #### Diagram 3: What happens on one RAG question
@@ -214,17 +242,19 @@ flowchart LR
 flowchart LR
     LAPTOP["Your laptop<br/>public internet"]
 
-    subgraph VNET["vnet-genai-lab - 10.0.0.0/16 - East US 2"]
-        subgraph APPS["snet-apps - 10.0.2.0/24"]
-            VM["Backend app or test VM"]
+    subgraph NETRG["Network resource group: rg-genai-network"]
+        subgraph VNET["vnet-genai-lab - 10.0.0.0/16 - East US 2"]
+            subgraph APPS["snet-apps - 10.0.2.0/24"]
+                VM["Backend app or test VM<br/>resource lives in rg-genai-lab"]
+            end
+            subgraph PES["snet-private-endpoints - 10.0.1.0/24"]
+                PE["Private endpoint<br/>private IP 10.0.1.x<br/>resource lives in rg-genai-lab"]
+            end
         end
-        subgraph PES["snet-private-endpoints - 10.0.1.0/24"]
-            PE["Private endpoint<br/>private IP 10.0.1.x"]
-        end
-        DNS["Private DNS zones<br/>privatelink.openai.azure.com<br/>privatelink.cognitiveservices.azure.com<br/>privatelink.services.ai.azure.com"]
+        DNS["Private DNS zones, linked to the VNet<br/>privatelink.openai.azure.com<br/>privatelink.cognitiveservices.azure.com<br/>privatelink.services.ai.azure.com"]
     end
 
-    subgraph PAAS["Azure platform - outside your VNet"]
+    subgraph PAAS["Workload resource group: rg-genai-lab - Azure platform, outside the VNet"]
         FR["Foundry resource<br/>public access: Disabled"]
     end
 
@@ -237,46 +267,57 @@ flowchart LR
 
 Read it as: the app never changes its URL. The private DNS zone makes the same hostname resolve to the private endpoint's IP, and the private endpoint carries the traffic to the Foundry resource over Microsoft's network.
 
-### Lab 0: Create the Resource Group, VNet and Subnets
+### Lab 0: Create the Resource Groups, VNet and Subnets
 
-Do this first. It builds the empty network from the target design, so everything created later lands in the right resource group and region. A resource group, a VNet and its subnets are all **free**.
+Do this first. It builds the isolated network group and the empty workload group from the target design. Resource groups, a VNet, subnets and a lock are all **free**.
 
-#### Step 1: Create the resource group
+#### Step 1: Create the two resource groups
 
 1. **Azure portal** → search **Resource groups** → **+ Create**.
-2. **Subscription:** your subscription. **Resource group:** `rg-genai-lab`. **Region:** `East US 2`.
+2. **Subscription:** your subscription. **Resource group:** `rg-genai-network`. **Region:** `East US 2`.
 3. **Review + create** → **Create**.
+4. Repeat with the name `rg-genai-lab`. Leave this one empty for now; Lab 1 fills it.
 
-#### Step 2: Create the virtual network and both subnets
+#### Step 2: Create the virtual network and both subnets in the network group
 
 1. **Azure portal** → **Create a resource** → search **Virtual network** → **Create**.
-2. **Basics:** resource group `rg-genai-lab`, name `vnet-genai-lab`, region `East US 2`.
+2. **Basics:** resource group **`rg-genai-network`**, name `vnet-genai-lab`, region `East US 2`.
 3. **IP addresses** tab: set the address space to `10.0.0.0/16`.
 4. Edit the `default` subnet: rename it `snet-private-endpoints`, range `10.0.1.0/24` → **Save**.
 5. Select **+ Add a subnet**: name `snet-apps`, range `10.0.2.0/24` → **Add**.
 6. **Review + create** → **Create**.
 
-#### Step 3: Check it
+#### Step 3: Protect the network group with a delete lock
 
-1. Open `vnet-genai-lab` → **Settings** → **Subnets**.
-2. You should see exactly these two:
+1. Open the resource group `rg-genai-network` → **Settings** → **Locks** → **+ Add**.
+2. **Lock name:** `do-not-delete`. **Lock type:** **Delete**. → **OK**.
 
-| Subnet | Range | What will go in it | Used in |
+Nobody, including you, can now delete the VNet by accident. You remove this lock in Lab 10 before clean-up.
+
+#### Step 4: Check it
+
+1. Open `rg-genai-network`. It should contain only `vnet-genai-lab`.
+2. Open `vnet-genai-lab` → **Settings** → **Subnets**. You should see exactly these two:
+
+| Subnet | Range | What attaches to it | Used in |
 | :--- | :--- | :--- | :--- |
 | `snet-private-endpoints` | `10.0.1.0/24` | The private endpoint that leads to the Foundry resource | Lab 8 |
-| `snet-apps` | `10.0.2.0/24` | Your backend app or a test VM, the caller of the model | Lab 8 |
+| `snet-apps` | `10.0.2.0/24` | Your backend app, a test VM or AKS nodes: the callers of the model | Lab 8 |
+
+3. Open `rg-genai-lab`. It should be empty.
 
 <details>
-<summary>▶ Azure CLI: create the resource group, VNet and both subnets</summary>
+<summary>▶ Azure CLI: create both resource groups, the VNet, both subnets and the lock</summary>
 
 ```bash
 az login
 
-az group create --name rg-genai-lab --location eastus2
+az group create --name rg-genai-network --location eastus2
+az group create --name rg-genai-lab     --location eastus2
 
 az network vnet create \
     --name vnet-genai-lab \
-    --resource-group rg-genai-lab \
+    --resource-group rg-genai-network \
     --location eastus2 \
     --address-prefixes 10.0.0.0/16 \
     --subnet-name snet-private-endpoints \
@@ -285,17 +326,33 @@ az network vnet create \
 az network vnet subnet create \
     --name snet-apps \
     --vnet-name vnet-genai-lab \
-    --resource-group rg-genai-lab \
+    --resource-group rg-genai-network \
     --address-prefixes 10.0.2.0/24
+
+az lock create \
+    --name do-not-delete \
+    --resource-group rg-genai-network \
+    --lock-type CanNotDelete
 
 # Should list both subnets
 az network vnet subnet list \
     --vnet-name vnet-genai-lab \
-    --resource-group rg-genai-lab \
+    --resource-group rg-genai-network \
     --query "[].{name:name,range:addressPrefix}" --output table
 ```
 
 </details>
+
+#### Who gets access to what (production practice)
+
+In these labs you are Owner of everything. In a real team the access is split:
+
+| Team | On `rg-genai-network` | On `rg-genai-lab` |
+| :--- | :--- | :--- |
+| Network team | **Network Contributor** | None |
+| App / AI team | **Reader**, plus permission to join the specific subnet they were given | **Contributor** |
+
+The app team can attach a private endpoint or a VM to their subnet, but cannot change address ranges, routes or DNS.
 
 ### How the network is used across the labs
 
@@ -303,14 +360,16 @@ The VNet sits idle until Lab 8. A Foundry resource is a platform service: it is 
 
 | Labs | Network in use | Why |
 | :--- | :--- | :--- |
-| 0 | Creates the VNet and two subnets | Network-first, the way a real project starts |
+| 0 | Creates the network group, the VNet and two subnets | Network-first and isolated, the way a real project starts |
 | 1 to 7, 9 to 14 | **Public endpoint.** The VNet is not used | You call the model from your own machine, and the Lab 7 wizard requires public access |
 | 8 | **Private endpoint in the VNet** | Public access is switched off and traffic moves into the VNet |
 
 Design rules to remember:
 
 * The **private endpoint must be in the same region as the VNet**. The Foundry resource it points to can be in any region.
+* Keep the **network in its own resource group**. Workloads attach to a subnet from their own group.
 * Give private endpoints **their own subnet**. Apps go in a different subnet.
+* Put **private DNS zones with the network**, because every workload on the VNet depends on them.
 * A real production design starts network-first: VNet, subnets and private DNS zones exist before any AI resource, and the resource is created with public access already disabled (the **Network** tab in Lab 1, Option B).
 
 ---
@@ -1146,10 +1205,12 @@ By default the endpoint is reachable from the internet (protected by key or Entr
 
 ### Step 1: Confirm the network from Lab 0
 
-The VNet and subnets were created in [Lab 0](#lab-0-create-the-resource-group-vnet-and-subnets). If you skipped it, do it now.
+The VNet and subnets were created in [Lab 0](#lab-0-create-the-resource-groups-vnet-and-subnets). If you skipped it, do it now.
 
-1. **Azure portal** → `vnet-genai-lab` → **Settings** → **Subnets**.
+1. **Azure portal** → resource group `rg-genai-network` → `vnet-genai-lab` → **Settings** → **Subnets**.
 2. Confirm `snet-private-endpoints` (`10.0.1.0/24`) and `snet-apps` (`10.0.2.0/24`) both exist.
+
+In this lab the resources you create go in the workload group `rg-genai-lab`, and they attach to subnets in the network group `rg-genai-network`. Only the private DNS zones are created in the network group.
 
 ### Step 2: Choose how to restrict access
 
@@ -1159,7 +1220,7 @@ The endpoint stays public, but only listed sources are let in. Simple, and enoug
 
 1. **Azure portal** → Foundry resource → **Resource Management** → **Networking**.
 2. Select **Selected networks**.
-3. Under virtual networks, add the existing network `vnet-genai-lab` and subnet `snet-apps`. The portal turns on the required service endpoint on that subnet.
+3. Under virtual networks, add the existing network `vnet-genai-lab` (it is listed even though it is in `rg-genai-network`) and subnet `snet-apps`. The portal turns on the required service endpoint on that subnet.
 4. To keep working from your own machine, add your public IP under **Firewall** → **Address range**.
 5. **Save**.
 
@@ -1169,11 +1230,12 @@ No public path at all. This is the usual production choice.
 
 1. Same **Networking** page → select **Disabled** → **Save**.
 2. Open the **Private endpoint connections** tab → **+ Private endpoint**.
-3. **Basics:** resource group `rg-genai-lab`, name `pe-foundry-genai-lab`, region `East US 2` (must match the VNet).
+3. **Basics:** resource group **`rg-genai-lab`** (the endpoint belongs to the workload), name `pe-foundry-genai-lab`, region `East US 2` (must match the VNet).
 4. **Resource:** target sub-resource **account**.
-5. **Virtual Network:** `vnet-genai-lab`, subnet `snet-private-endpoints`.
-6. **DNS:** keep **Integrate with private DNS zone** set to **Yes**. Azure creates the zones `privatelink.cognitiveservices.azure.com`, `privatelink.openai.azure.com` and `privatelink.services.ai.azure.com` and links them to the VNet.
+5. **Virtual Network:** `vnet-genai-lab`, subnet `snet-private-endpoints`. The VNet is in `rg-genai-network`; the endpoint only attaches to it.
+6. **DNS:** keep **Integrate with private DNS zone** set to **Yes**, and change the **Resource group** for the zones to **`rg-genai-network`**. Azure creates the zones `privatelink.cognitiveservices.azure.com`, `privatelink.openai.azure.com` and `privatelink.services.ai.azure.com` there and links them to the VNet.
 7. **Review + create** → **Create**.
+8. Check: `rg-genai-lab` now contains the private endpoint and its network interface. `rg-genai-network` contains the VNet and three private DNS zones.
 
 <details>
 <summary>▶ Azure CLI: create the private endpoint</summary>
@@ -1184,12 +1246,18 @@ RESOURCE_ID=$(az cognitiveservices account show \
     --resource-group rg-genai-lab \
     --query id --output tsv)
 
+# The subnet is in another resource group, so pass its full ID
+SUBNET_ID=$(az network vnet subnet show \
+    --resource-group rg-genai-network \
+    --vnet-name vnet-genai-lab \
+    --name snet-private-endpoints \
+    --query id --output tsv)
+
 az network private-endpoint create \
     --name pe-foundry-genai-lab \
     --resource-group rg-genai-lab \
     --location eastus2 \
-    --vnet-name vnet-genai-lab \
-    --subnet snet-private-endpoints \
+    --subnet $SUBNET_ID \
     --private-connection-resource-id $RESOURCE_ID \
     --group-id account \
     --connection-name pe-foundry-genai-lab-conn
@@ -1204,7 +1272,7 @@ After this, calls from your laptop fail and calls from inside the VNet succeed, 
 ### Step 3: Prove it (optional)
 
 1. From your own machine run `python chat_app.py`. It should now fail with a `403` or connection error.
-2. To see it work privately, create a small virtual machine in `snet-apps` and run `nslookup foundry-genai-lab-<yourname>.openai.azure.com` on it. The answer should be a `10.0.1.x` address.
+2. To see it work privately, create a small virtual machine in the resource group `rg-genai-lab`, and on its **Networking** tab choose `vnet-genai-lab` and subnet `snet-apps`. Then run `nslookup foundry-genai-lab-<yourname>.openai.azure.com` on it. The answer should be a `10.0.1.x` address.
 
 A VM is billed while it runs. Delete it straight after the test, or skip this step and rely on the failed call from your machine as proof.
 
@@ -1282,7 +1350,7 @@ Each intervention point adds roughly 50 to 100 ms of latency, so add only the co
 ### Set a budget alert (Azure portal)
 
 1. Search the top bar for **Cost Management + Billing** → **Cost Management** → **Budgets**.
-2. Select **+ Add**. Set the **Scope** to the resource group `rg-genai-lab`.
+2. Select **+ Add**. Set the **Scope** to the resource group `rg-genai-lab`. Almost all cost is here; the network group holds only the free VNet and the low-cost private DNS zones.
 3. Give it a name, a **Monthly** reset period and an amount (for example 10).
 4. **Next** → add an alert at **80%** of **Actual** cost with your email → **Create**.
 
@@ -1294,8 +1362,13 @@ Foundry resource → **Monitoring** → **Metrics** shows requests and tokens pe
 
 ### Clean up everything
 
-1. **Azure portal** → **Resource groups** → `rg-genai-lab`.
-2. Select **Delete resource group**, type the name to confirm, **Delete**.
+There are two resource groups. Follow this order.
+
+1. **Remove the lock first:** **Azure portal** → **Resource groups** → `rg-genai-network` → **Settings** → **Locks** → delete `do-not-delete`. If you leave it on, deleting the private endpoint cannot remove its DNS records and the clean-up fails part-way.
+2. **Delete the workload group:** **Resource groups** → `rg-genai-lab` → **Delete resource group**, type the name to confirm, **Delete**. Wait until it has gone. This removes everything that costs money.
+3. **Delete the network group:** **Resource groups** → `rg-genai-network` → **Delete resource group**, confirm, **Delete**.
+
+In a real environment you would stop after step 2 and put the lock back: the workload goes, the network stays for the next one. That is the point of keeping them apart.
 
 A deleted Foundry resource is kept in a soft-deleted state and still reserves its name. To reuse the name right away, search the portal for **Foundry**, open **Manage deleted resources**, select it and **Purge**.
 
@@ -1305,10 +1378,18 @@ Users are not part of a resource group. If you did Lab 14, also delete `chat_use
 <summary>▶ Azure CLI: delete and purge</summary>
 
 ```bash
-az group delete --name rg-genai-lab --yes --no-wait
+# 1. Remove the lock on the network group
+az lock delete --name do-not-delete --resource-group rg-genai-network
 
-# Prints false when deletion has finished
+# 2. Delete the workload group and wait for it to finish
+az group delete --name rg-genai-lab --yes
+
+# 3. Delete the network group
+az group delete --name rg-genai-network --yes
+
+# Both print false when deletion has finished
 az group exists --name rg-genai-lab
+az group exists --name rg-genai-network
 
 # Release the resource name immediately
 az cognitiveservices account purge \
