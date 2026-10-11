@@ -19,18 +19,21 @@ Click a lab to jump to it. Every section has a **⬆ Back to Lab Index** link un
 | [**Lab 11: Prompt Engineering**](#15-lab-11-prompt-engineering) | Write prompts that give reliable answers | Foundry portal, your machine | A little | Tokens |
 | [**Lab 12: Structured Outputs (JSON)**](#16-lab-12-structured-outputs-json) | Get JSON that always matches your schema | Your machine | Yes | Tokens |
 | [**Lab 13: Function Calling**](#17-lab-13-function-calling) | Let the model call your Python function | Your machine | Yes | Tokens |
+| [**Lab 14: Project-Level Access for Two Users**](#18-lab-14-project-level-access-for-two-users) | Two projects, two users, each sees only their own | Azure portal, Foundry portal | No | None |
 
-**Suggested order:** Labs 1 to 5, then 11 to 13, then 6, 7 and 9. Do Lab 8 near the end because it blocks access from your machine, and finish with the clean-up in Lab 10.
+**Suggested order:** Labs 1 to 5, then 11 to 13, then 6, 14, 7 and 9. Do Lab 8 near the end because it blocks access from your machine, and finish with the clean-up in Lab 10.
 
 ### Concepts and reference
 
-| Section | Read it for |
+| Section | Read it for | 
 | :--- | :--- |
+| [Prerequisites and Design](#prerequisites-and-design) | What you need first, the target layout, and when the VNet is needed |
+| [Flow diagrams](#flow-diagrams) | Mermaid diagrams: lab journey, end-to-end architecture, one RAG request, network path |
 | [1. Core Concepts](#1-core-concepts) | Tokens, context window, embeddings, RAG in plain words |
 | [2. OpenAI API vs. Azure OpenAI in Microsoft Foundry](#2-openai-api-vs-azure-openai-in-microsoft-foundry) | Why a company picks Azure |
 | [3. How Azure Organises It](#3-how-azure-organises-it-resource-project-deployment) | Resource, project, deployment, and the two portals |
 | [6. Models, Deployment Types and Model Lifecycle](#6-models-deployment-types-and-model-lifecycle) | Which model to pick, where data is processed, retirement |
-| [18. Troubleshooting](#18-troubleshooting) | What an error code means and how to fix it |
+| [19. Troubleshooting](#19-troubleshooting) | What an error code means and how to fix it |
 | [Reference Links](#reference-links) | The Microsoft Learn pages behind each lab |
 
 ---
@@ -45,6 +48,210 @@ Click a lab to jump to it. Every section has a **⬆ Back to Lab Index** link un
 | Project | `genai-lab-project` |
 | Chat deployment | `gpt-5.4-mini` |
 | Embedding deployment | `text-embedding-3-small` |
+| Virtual network (Lab 8 only) | `vnet-genai-lab`, address space `10.0.0.0/16` |
+| Subnet for private endpoints (Lab 8 only) | `snet-private-endpoints`, `10.0.1.0/24` |
+| Subnet for apps and test VM (Lab 8 only) | `snet-apps`, `10.0.2.0/24` |
+
+---
+
+## Prerequisites and Design
+
+[⬆ Back to Lab Index](#lab-index)
+
+### Before you start
+
+* An Azure subscription with a payment method, and the **Owner** role on it (needed to assign roles in Labs 6 and 7).
+* A browser for the two portals. Nothing else is needed for the portal-only labs.
+* For the Python labs: Python 3.10 or later and a code editor.
+* For the CLI blocks: Azure CLI 2.80.0 or later.
+
+### Target design
+
+Everything lives in one resource group and one region, so one delete removes it all.
+
+```
+Subscription
+└── Resource group: rg-genai-lab                                  (region: eastus2)
+    │
+    ├── Foundry resource: foundry-genai-lab-<yourname>            Labs 1-6, 9, 11-13
+    │   ├── Project: genai-lab-project
+    │   ├── Deployment: gpt-5.4-mini
+    │   └── Deployment: text-embedding-3-small
+    │
+    ├── Storage account  (container: docs)                        Lab 7
+    ├── Azure AI Search  (Basic tier, index: rag-lab...)          Lab 7
+    │
+    └── Virtual network: vnet-genai-lab  10.0.0.0/16              Lab 8 only
+        ├── snet-private-endpoints  10.0.1.0/24
+        │     └── Private endpoint ──> Foundry resource
+        └── snet-apps               10.0.2.0/24
+              └── your app or a test VM (calls the model privately)
+```
+
+### Flow diagrams
+
+These are Mermaid diagrams. GitHub renders them automatically. In VS Code, install the extension **Markdown Preview Mermaid Support**, then open the preview with `Ctrl+Shift+V`.
+
+#### Diagram 1: The lab journey
+
+```mermaid
+flowchart TD
+    subgraph P1["Phase 1: Build the platform (portal only)"]
+        direction LR
+        L1["Lab 1<br/>Create Foundry resource"] --> L2["Lab 2<br/>Deploy models"] --> L3["Lab 3<br/>Playground"]
+    end
+    subgraph P2["Phase 2: Develop with Python"]
+        direction LR
+        L4["Lab 4<br/>First call"] --> L5["Lab 5<br/>Embeddings"] --> L11["Lab 11<br/>Prompts"] --> L12["Lab 12<br/>JSON output"] --> L13["Lab 13<br/>Function calling"]
+    end
+    subgraph P3["Phase 3: Secure and ground"]
+        direction LR
+        L6["Lab 6<br/>Keyless auth"] --> L14["Lab 14<br/>Project access"] --> L7["Lab 7<br/>RAG"] --> L9["Lab 9<br/>Guardrails"]
+    end
+    subgraph P4["Phase 4: Lock down and finish"]
+        direction LR
+        L8["Lab 8<br/>Private network"] --> L10["Lab 10<br/>Budget and clean-up"]
+    end
+    P1 --> P2 --> P3 --> P4
+```
+
+#### Diagram 2: End-to-end architecture
+
+Who talks to what, and which lab builds each piece.
+
+```mermaid
+flowchart LR
+    subgraph PEOPLE["People and code"]
+        ADMIN["Admin<br/>Azure portal and Foundry portal"]
+        APP["Python app or backend<br/>Labs 4, 5, 11 to 13"]
+        USERS["chat_user and trans_user<br/>Lab 14"]
+    end
+
+    ENTRA["Microsoft Entra ID<br/>sign-in and RBAC roles<br/>Labs 6 and 14"]
+
+    subgraph RG["Resource group: rg-genai-lab"]
+        subgraph FR["Foundry resource - Lab 1"]
+            EP["Endpoint<br/>/openai/v1/"]
+            GR["Guardrail<br/>Lab 9"]
+            CHAT["Deployment<br/>gpt-5.4-mini"]
+            EMB["Deployment<br/>text-embedding-3-small"]
+            PROJ["Projects<br/>genai-lab-project, chatapp, transapp"]
+        end
+        BLOB["Storage account<br/>container: docs<br/>Lab 7"]
+        SEARCH["Azure AI Search<br/>index: rag-lab<br/>Lab 7"]
+    end
+
+    COST["Cost Management<br/>budget alert<br/>Lab 10"]
+
+    ADMIN -->|"create, deploy, assign roles"| FR
+    APP -->|"get token"| ENTRA
+    APP -->|"request with key or token"| EP
+    EP --> GR
+    GR --> CHAT
+    EP --> EMB
+    USERS -->|"sign in"| ENTRA
+    USERS -->|"open own project only"| PROJ
+    BLOB -->|"indexer reads PDFs"| SEARCH
+    SEARCH -->|"embed chunks and questions"| EMB
+    APP -->|"search with the question"| SEARCH
+    RG -.->|"usage and cost"| COST
+```
+
+#### Diagram 3: What happens on one RAG question
+
+The order of calls for a single user question, including the guardrail checks.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant A as Your app
+    participant E as Microsoft Entra ID
+    participant S as Azure AI Search
+    participant F as Foundry endpoint
+    participant G as Guardrail
+    participant M as gpt-5.4-mini
+
+    U->>A: Ask a question
+    A->>E: Request a token
+    E-->>A: Access token
+    A->>S: Hybrid search with the question
+    S->>F: Embed the question
+    F-->>S: Question vector
+    S-->>A: Top matching chunks
+    A->>F: responses.create with instructions, chunks and question
+    F->>G: Check the prompt
+    alt Prompt blocked
+        G-->>A: HTTP 400 content_filter
+    else Prompt allowed
+        G->>M: Forward the prompt
+        M-->>G: Draft answer
+        G-->>F: Answer passed the output check
+        F-->>A: Grounded answer
+    end
+    A-->>U: Answer with sources
+```
+
+Without RAG (Labs 4, 11, 12, 13) steps 4 to 7 are skipped: the app goes straight from the token to `responses.create`. With an API key in place of Entra ID, steps 2 and 3 are skipped too.
+
+#### Diagram 4: Network path, before and after Lab 8
+
+**Before Lab 8 (default):** the endpoint is public. Anyone with a valid key or token can reach it from anywhere.
+
+```mermaid
+flowchart LR
+    LAPTOP["Your laptop<br/>public internet"]
+    subgraph PAAS["Azure platform"]
+        FR["Foundry resource<br/>public access: All networks"]
+    end
+    LAPTOP -->|"HTTPS to public endpoint<br/>key or Entra token"| FR
+```
+
+**After Lab 8 (private endpoint only):** the public path is closed. Only callers inside the VNet reach the model.
+
+```mermaid
+flowchart LR
+    LAPTOP["Your laptop<br/>public internet"]
+
+    subgraph VNET["vnet-genai-lab - 10.0.0.0/16 - East US 2"]
+        subgraph APPS["snet-apps - 10.0.2.0/24"]
+            VM["Backend app or test VM"]
+        end
+        subgraph PES["snet-private-endpoints - 10.0.1.0/24"]
+            PE["Private endpoint<br/>private IP 10.0.1.x"]
+        end
+        DNS["Private DNS zones<br/>privatelink.openai.azure.com<br/>privatelink.cognitiveservices.azure.com<br/>privatelink.services.ai.azure.com"]
+    end
+
+    subgraph PAAS["Azure platform - outside your VNet"]
+        FR["Foundry resource<br/>public access: Disabled"]
+    end
+
+    VM -->|"1. look up the hostname"| DNS
+    DNS -->|"2. answers 10.0.1.x"| VM
+    VM -->|"3. HTTPS to the private IP"| PE
+    PE -->|"4. Private Link"| FR
+    LAPTOP -. "blocked" .-> FR
+```
+
+Read it as: the app never changes its URL. The private DNS zone makes the same hostname resolve to the private endpoint's IP, and the private endpoint carries the traffic to the Foundry resource over Microsoft's network.
+
+### Does the VNet have to exist first?
+
+**No.** A Foundry resource is a platform service. It is not placed inside a VNet when you create it, unlike a virtual machine. You connect it to a VNet afterwards with a private endpoint, and you can do that at any time without recreating anything.
+
+| Labs | Network needed | Why |
+| :--- | :--- | :--- |
+| 1 to 7, 9 to 13 | **None.** Public endpoint | You call the model from your own machine, and the Lab 7 wizard requires public access |
+| 8 | **VNet and two subnets** | Created as the first step of Lab 8 |
+
+A VNet and its subnets are free, so you may create them at the start if you prefer. Only the private endpoint is billed.
+
+Design rules to remember:
+
+* The **private endpoint must be in the same region as the VNet**. The Foundry resource it points to can be in any region.
+* Give private endpoints **their own subnet**. Apps go in a different subnet.
+* A real production design starts network-first: VNet, subnets and private DNS zones exist before any AI resource, and the resource is created with public access already disabled (the **Network** tab in Lab 1, Option B).
 
 ---
 
@@ -140,7 +347,9 @@ You work in two portals:
 3. Leave **Network** on **All networks** for now (Lab 8 locks it down). Leave **Identity**, **Encryption** and **Storage** on defaults.
 4. Select **Review + create**, then **Create**.
 5. When deployment finishes select **Go to resource**. On the **Overview** page check **Status** is available.
-6. Open the Foundry portal (https://ai.azure.com), pick this resource, and create the project `genai-lab-project` if one was not created for you.
+6. Open the Foundry portal (https://ai.azure.com) and select your project. If the **Basics** tab showed a default project name field, the project was created with the resource (enter `genai-lab-project` there). If you see no project, select **Create new project** and name it `genai-lab-project`.
+
+One Foundry resource can hold many projects. The resource owns what is shared (endpoint, keys, networking, billing, model deployments); each project is a workspace for one use case or team, with its own agents, evaluations and user access. One project is enough for these labs.
 
 <details>
 <summary>▶ Azure CLI: create resource group, Foundry resource and project</summary>
@@ -751,24 +960,94 @@ By default the endpoint is reachable from the internet (protected by key or Entr
 +----------------------+                                   +-------------------------+
 ```
 
-### Option 1: Allow only chosen networks or IPs
+### Step 1: Create the virtual network and subnets
+
+See [Prerequisites and Design](#prerequisites-and-design) for the layout.
+
+1. **Azure portal** → **Create a resource** → search **Virtual network** → **Create**.
+2. **Basics:** resource group `rg-genai-lab`, name `vnet-genai-lab`, region `East US 2`.
+3. **IP addresses** tab: set the address space to `10.0.0.0/16`.
+4. Edit the `default` subnet: rename it `snet-private-endpoints`, range `10.0.1.0/24` → **Save**.
+5. Select **+ Add a subnet**: name `snet-apps`, range `10.0.2.0/24` → **Add**.
+6. **Review + create** → **Create**.
+
+<details>
+<summary>▶ Azure CLI: create the VNet and both subnets</summary>
+
+```bash
+az network vnet create \
+    --name vnet-genai-lab \
+    --resource-group rg-genai-lab \
+    --location eastus2 \
+    --address-prefixes 10.0.0.0/16 \
+    --subnet-name snet-private-endpoints \
+    --subnet-prefixes 10.0.1.0/24
+
+az network vnet subnet create \
+    --name snet-apps \
+    --vnet-name vnet-genai-lab \
+    --resource-group rg-genai-lab \
+    --address-prefixes 10.0.2.0/24
+```
+
+</details>
+
+### Step 2: Choose how to restrict access
+
+#### Option 1: Allow only chosen networks or IPs
+
+The endpoint stays public, but only listed sources are let in. Simple, and enough for many internal tools.
 
 1. **Azure portal** → Foundry resource → **Resource Management** → **Networking**.
 2. Select **Selected networks**.
-3. Add your virtual network and subnet, or add your public IP under **Firewall** → **Address range**.
-4. **Save**.
+3. Under virtual networks, add the existing network `vnet-genai-lab` and subnet `snet-apps`. The portal turns on the required service endpoint on that subnet.
+4. To keep working from your own machine, add your public IP under **Firewall** → **Address range**.
+5. **Save**.
 
-### Option 2: Private endpoint only
+#### Option 2: Private endpoint only
+
+No public path at all. This is the usual production choice.
 
 1. Same **Networking** page → select **Disabled** → **Save**.
 2. Open the **Private endpoint connections** tab → **+ Private endpoint**.
-3. **Basics:** resource group `rg-genai-lab`, a name, the same region as your VNet.
+3. **Basics:** resource group `rg-genai-lab`, name `pe-foundry-genai-lab`, region `East US 2` (must match the VNet).
 4. **Resource:** target sub-resource **account**.
-5. **Virtual Network:** choose the VNet and subnet your app can reach.
-6. **DNS:** keep **Integrate with private DNS zone** set to **Yes**. Azure creates the zones `privatelink.cognitiveservices.azure.com`, `privatelink.openai.azure.com` and `privatelink.services.ai.azure.com`.
+5. **Virtual Network:** `vnet-genai-lab`, subnet `snet-private-endpoints`.
+6. **DNS:** keep **Integrate with private DNS zone** set to **Yes**. Azure creates the zones `privatelink.cognitiveservices.azure.com`, `privatelink.openai.azure.com` and `privatelink.services.ai.azure.com` and links them to the VNet.
 7. **Review + create** → **Create**.
 
+<details>
+<summary>▶ Azure CLI: create the private endpoint</summary>
+
+```bash
+RESOURCE_ID=$(az cognitiveservices account show \
+    --name foundry-genai-lab-<yourname> \
+    --resource-group rg-genai-lab \
+    --query id --output tsv)
+
+az network private-endpoint create \
+    --name pe-foundry-genai-lab \
+    --resource-group rg-genai-lab \
+    --location eastus2 \
+    --vnet-name vnet-genai-lab \
+    --subnet snet-private-endpoints \
+    --private-connection-resource-id $RESOURCE_ID \
+    --group-id account \
+    --connection-name pe-foundry-genai-lab-conn
+```
+
+This creates the endpoint only. The portal steps above also create and link the private DNS zones for you, so use the portal for this lab unless you want to script DNS separately.
+
+</details>
+
 After this, calls from your laptop fail and calls from inside the VNet succeed, with no code change, because the same hostname now resolves to a private IP.
+
+### Step 3: Prove it (optional)
+
+1. From your own machine run `python chat_app.py`. It should now fail with a `403` or connection error.
+2. To see it work privately, create a small virtual machine in `snet-apps` and run `nslookup foundry-genai-lab-<yourname>.openai.azure.com` on it. The answer should be a `10.0.1.x` address.
+
+A VM is billed while it runs. Delete it straight after the test, or skip this step and rely on the failed call from your machine as proof.
 
 Practice notes: do this lab last. With public access disabled you can no longer call the model from your own machine, and the Import data wizard in Lab 7 needs public access while it runs. Set it back to **All networks** to continue other labs.
 
@@ -860,6 +1139,8 @@ Foundry resource → **Monitoring** → **Metrics** shows requests and tokens pe
 2. Select **Delete resource group**, type the name to confirm, **Delete**.
 
 A deleted Foundry resource is kept in a soft-deleted state and still reserves its name. To reuse the name right away, search the portal for **Foundry**, open **Manage deleted resources**, select it and **Purge**.
+
+Users are not part of a resource group. If you did Lab 14, also delete `chat_user` and `trans_user`: **Microsoft Entra ID** → **Users** → select both → **Delete**.
 
 <details>
 <summary>▶ Azure CLI: delete and purge</summary>
@@ -1091,7 +1372,152 @@ Function calling is the building block for agents: an agent is a model that call
 
 ---
 
-## 18. Troubleshooting
+## 18. Lab 14: Project-Level Access for Two Users
+
+[⬆ Back to Lab Index](#lab-index)
+
+**Goal:** one Foundry resource, two projects, two users. Each user signs in and sees only their own project.
+
+```
+Foundry resource: foundry-genai-lab-<yourname>
+│   Shared by both projects: model deployments, endpoint, keys, network
+│
+├── Project: chatapp   ── Foundry User ──> chat_user    (cannot see transapp)
+└── Project: transapp  ── Foundry User ──> trans_user   (cannot see chatapp)
+```
+
+There is no routing. The Foundry portal lists only the projects the signed-in account has a role on, so access is decided entirely by **where you assign the role**.
+
+**You need:** Lab 1 and Lab 2 done, the **Owner** role on the resource (to assign roles), and permission to create users in your Microsoft Entra tenant (for example **User Administrator**).
+
+### Step 1: Create the two projects
+
+1. **Foundry portal** → select the current project name in the upper-left corner → **Create new project**.
+2. **Project name:** `chatapp`.
+3. Open **Advanced options** and make sure the existing resource `foundry-genai-lab-<yourname>` and resource group `rg-genai-lab` are selected, so the project is added to the same resource and a second resource is not created.
+4. Select **Create project**.
+5. Repeat for `transapp`.
+6. Check: **Azure portal** → resource group `rg-genai-lab`. You should still see **one** Foundry resource, now with the projects `chatapp` and `transapp` under it.
+
+<details>
+<summary>▶ Azure CLI: create both projects under the same resource</summary>
+
+```bash
+for PROJECT in chatapp transapp; do
+  az cognitiveservices account project create \
+      --name foundry-genai-lab-<yourname> \
+      --resource-group rg-genai-lab \
+      --project-name $PROJECT \
+      --location eastus2
+done
+```
+
+</details>
+
+### Step 2: Create the two test users
+
+1. **Azure portal** → search **Microsoft Entra ID** → **Users** → **New user** → **Create new user**.
+2. **User principal name:** `chat_user` (the domain after `@` is your tenant, for example `yourtenant.onmicrosoft.com`).
+3. **Display name:** `Chat User`.
+4. Keep **Auto-generate password** ticked and **copy the password** now.
+5. **Review + create** → **Create**.
+6. Repeat for `trans_user` / `Trans User`.
+
+<details>
+<summary>▶ Azure CLI: create both users</summary>
+
+```bash
+# Replace the domain and choose your own temporary passwords
+az ad user create \
+    --display-name "Chat User" \
+    --user-principal-name chat_user@yourtenant.onmicrosoft.com \
+    --password "<temporary-password>" \
+    --force-change-password-next-sign-in true
+
+az ad user create \
+    --display-name "Trans User" \
+    --user-principal-name trans_user@yourtenant.onmicrosoft.com \
+    --password "<temporary-password>" \
+    --force-change-password-next-sign-in true
+```
+
+</details>
+
+### Step 3: Give each user a role on their own project only
+
+1. **Foundry portal** → open the project **chatapp**.
+2. Select **Manage** in the upper-right navigation → **Project details** in the left pane → **Users** tab.
+3. Select **Add user**, enter `chat_user@yourtenant.onmicrosoft.com`, then **Add**. This assigns the **Foundry User** role on this project.
+4. Switch to the project **transapp** and repeat for `trans_user@yourtenant.onmicrosoft.com`.
+
+Do **not** add these users on the Foundry resource, the resource group or the subscription. Roles inherit downward, so a role assigned there would show them every project.
+
+<details>
+<summary>▶ Azure CLI: assign Foundry User at project scope</summary>
+
+```bash
+# Foundry User role, by ID (the display name is being renamed, the ID is stable)
+FOUNDRY_USER="53ca6127-db72-4b80-b1b0-d745d6d5456d"
+
+CHAT_ID=$(az cognitiveservices account project show \
+    --name foundry-genai-lab-<yourname> --resource-group rg-genai-lab \
+    --project-name chatapp --query id --output tsv)
+
+TRANS_ID=$(az cognitiveservices account project show \
+    --name foundry-genai-lab-<yourname> --resource-group rg-genai-lab \
+    --project-name transapp --query id --output tsv)
+
+az role assignment create --role $FOUNDRY_USER \
+    --assignee chat_user@yourtenant.onmicrosoft.com \
+    --assignee-principal-type User --scope $CHAT_ID
+
+az role assignment create --role $FOUNDRY_USER \
+    --assignee trans_user@yourtenant.onmicrosoft.com \
+    --assignee-principal-type User --scope $TRANS_ID
+
+# Verify: each list should show exactly one user
+az role assignment list --scope $CHAT_ID  --role $FOUNDRY_USER --output table
+az role assignment list --scope $TRANS_ID --role $FOUNDRY_USER --output table
+```
+
+</details>
+
+### Step 4: Test as each user
+
+Role assignments can take a few minutes to apply. Use a private (incognito) browser window so your admin session does not interfere.
+
+| # | Do this | Expected result |
+| :-- | :--- | :--- |
+| 1 | Open https://ai.azure.com and sign in as `chat_user`. Set a new password when asked | Sign-in succeeds |
+| 2 | Look at the project list | Only **chatapp** is listed |
+| 3 | Open chatapp → **Build** → **Models** → **gpt-5.4-mini** and send a prompt | The model answers. Deployments belong to the resource, so both projects can use them |
+| 4 | Try **Manage** → **Project details** → **Users** → **Add user** | Not allowed. Foundry User cannot manage access |
+| 5 | Close the window, open a new private window, sign in as `trans_user` | Only **transapp** is listed |
+| 6 | As admin, open the Azure portal → project `chatapp` → **Access control (IAM)** → **Check access** → search `trans_user` | No role assignments on this project |
+
+### Step 5: See what goes wrong with the wrong scope (optional)
+
+1. As admin, **Azure portal** → Foundry resource → **Access control (IAM)** → **+ Add** → **Add role assignment** → **Foundry User** → member `chat_user` → **Review + assign**.
+2. Sign in again as `chat_user`. After a few minutes **both** projects are listed.
+3. Remove that assignment: **Access control (IAM)** → **Role assignments** → select the `chat_user` row at this resource → **Remove**.
+
+### What project separation does and does not give you
+
+| Separated per project | Shared across the resource |
+| :--- | :--- |
+| Who can open the project | Model deployments and their quota |
+| Agents, evaluations, files and other project assets | Endpoint and API keys |
+| The project's user list | Network settings and guardrail definitions |
+
+* **Keys bypass all of this.** An API key belongs to the resource, so anyone holding it can call every deployment. For real separation, have users sign in with Entra ID (Lab 6) and turn key authentication off.
+* **Cost is not split by project automatically.** Both projects draw on the same deployments. To bill two teams separately, give each its own deployment, or its own Foundry resource.
+* **For hard isolation** (separate network rules, separate keys, separate quota), use two Foundry resources, not two projects.
+
+Use **Foundry Project Manager** in place of Foundry User for a team lead who should be able to add their own users to their project.
+
+---
+
+## 19. Troubleshooting
 
 [⬆ Back to Lab Index](#lab-index)
 
