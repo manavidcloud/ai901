@@ -1006,35 +1006,156 @@ Temperature and top P are accepted by GPT-6 models. Other reasoning models may r
 
 [⬆ Back to Lab Index](#lab-index)
 
-Azure OpenAI uses the **v1 API**: the standard `openai` package, the standard `OpenAI()` client, and a base URL that ends in `/openai/v1/`. There is no `api-version` to manage. The recommended call is the **Responses API** (`client.responses.create`).
+**Where this runs:** on your own laptop. The script stays on your machine and sends a request over the internet to your model in Azure. Nothing is deployed to Azure in this lab.
 
-### Install
+**What you need first:**
+
+| Need | From |
+| :--- | :--- |
+| Python 3.10 or later, and a code editor such as VS Code | Your laptop |
+| The endpoint and **KEY 1** of your Foundry resource | Lab 1, "Find your endpoint and key" |
+| The deployment name `gpt-5.4-mini` | Lab 2 |
+| Public access still enabled on the Foundry resource | Default. It is only switched off in Lab 8 |
+
+**What you will have at the end:** one folder with one settings file and three small scripts.
+
+```
+genai-labs/
+├── .env               settings: endpoint, key, deployment names (the only file you edit)
+├── .gitignore         keeps .env out of Git
+├── chat_app.py        Step 6: one question, one answer
+├── chat_followup.py   Step 8: a two-turn conversation
+└── chat_stream.py     Step 9: the answer printed as it is generated
+```
+
+How the code talks to Azure: Azure OpenAI uses the **v1 API**. That means the standard `openai` package, the standard `OpenAI()` client, and a base URL that ends in `/openai/v1`. There is no `api-version` to manage. The recommended call is the **Responses API** (`client.responses.create`).
+
+### Step 1: Create the folder and open it
+
+1. Create a folder named `genai-labs` anywhere on your laptop.
+2. Open it in VS Code: **File** → **Open Folder**.
+3. Open a terminal inside it: **Terminal** → **New Terminal**.
+
+### Step 2: Create a virtual environment (recommended)
+
+A virtual environment keeps this lab's packages separate from the rest of your machine.
+
+Windows (PowerShell):
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+macOS or Linux:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Your terminal prompt now starts with `(.venv)`. Activate it again each time you open a new terminal.
+
+### Step 3: Install the packages
 
 ```bash
 pip install openai python-dotenv
 ```
 
-### `.env` (this is the only file you change)
+| Package | What it does |
+| :--- | :--- |
+| `openai` | The client that sends requests to the model |
+| `python-dotenv` | Reads the settings in `.env` so no key sits in your code |
+
+### Step 4: Create the `.env` file
+
+1. In VS Code select **New File** and name it exactly `.env` (a dot, then `env`, no other extension).
+2. Paste this in and replace the two placeholder values:
 
 ```env
-# Endpoint from Lab 1 + /openai/v1/
-AZURE_OPENAI_BASE_URL="https://foundry-genai-lab-<yourname>.openai.azure.com/openai/v1/"
+AZURE_OPENAI_BASE_URL="https://foundry-genai-lab-<yourname>.services.ai.azure.com/openai/v1"
 AZURE_OPENAI_API_KEY="paste-KEY-1-here"
-# Deployment names from Lab 2
 CHAT_DEPLOYMENT="gpt-5.4-mini"
 EMBEDDING_DEPLOYMENT="text-embedding-3-small"
 ```
 
-Add `.env` to `.gitignore`. Never commit a key.
+Where each value comes from:
 
-### `chat_app.py`
+| Setting | Where to copy it from |
+| :--- | :--- |
+| `AZURE_OPENAI_BASE_URL` | **Foundry portal** → **Build** → **Models** → `gpt-5.4-mini` → **Code** tab, the `endpoint` line. It must end in `/openai/v1` |
+| `AZURE_OPENAI_API_KEY` | The key on that **same model page**. It is the same value as **Azure portal** → Foundry resource → **Resource Management** → **Keys and Endpoint** → **KEY 1** |
+| `CHAT_DEPLOYMENT` | The deployment name from Lab 2. Change this one line to switch model |
+| `EMBEDDING_DEPLOYMENT` | The embedding deployment name from Lab 2. Used from Lab 5 onward |
+
+**Copy both the endpoint and the key from the model's page,** so they are certain to belong together.
+
+**Which key is it?** There is no project key and no per-model key. A Foundry resource has one pair of keys (KEY 1 and KEY 2), shared by every project and every deployment in it. The key on the model page and KEY 1 in the Azure portal are the same.
+
+**Which URL is it?** Three URLs look alike. Only the first is right for this lab:
+
+| URL | Looks like | Use it here? |
+| :--- | :--- | :--- |
+| **Model endpoint** (model page, **Code** tab) | `https://<name>.services.ai.azure.com/openai/v1` | **Yes** |
+| **Project endpoint** (project welcome page) | `https://<name>.services.ai.azure.com/api/projects/<project>` | **No.** It is for agents and the Foundry project SDK. Using it here gives a `404` |
+| **Resource endpoint** (Azure portal, Keys and Endpoint) | `https://<name>.services.ai.azure.com/` with no path | Only after you add `/openai/v1` to the end |
+
+The model endpoint has two valid host names and both work: `https://<name>.services.ai.azure.com/openai/v1` (what the portal shows) and `https://<name>.openai.azure.com/openai/v1`. Use the one your portal shows.
+
+### Step 5: Keep the key out of Git
+
+Create a file named `.gitignore` in the same folder with these two lines:
+
+```
+.env
+.venv/
+```
+
+Never commit a key. If a key is ever exposed, regenerate it under **Keys and Endpoint** → **Regenerate Key 1**.
+
+### Step 6: Create `chat_app.py`
+
+**Start from what the portal gives you.** In Lab 3 step 6, the **Code** tab shows a sample like this:
+
+```python
+from openai import OpenAI
+
+endpoint = "https://foundry-genai-lab-<yourname>.services.ai.azure.com/openai/v1"
+deployment_name = "gpt-5.4-mini"
+api_key = "<your-api-key>"
+
+client = OpenAI(
+    base_url=endpoint,
+    api_key=api_key
+)
+
+response = client.responses.create(
+    model=deployment_name,
+    input="What is the capital of France?",
+)
+
+print(f"answer: {response.output[0]}")
+```
+
+It works, and it is the minimum needed. The version used in this guide is the same call with six things added:
+
+| Added | Why |
+| :--- | :--- |
+| `load_dotenv()` and `os.environ[...]` | Endpoint, key and deployment name come from `.env`, so no key is typed into the code and one file configures every lab |
+| `instructions=` | Gives the model a role and rules, kept separate from the user's question |
+| `reasoning={"effort": "low"}` | Less thinking time: faster and cheaper for simple questions |
+| `text={"verbosity": "low"}` | A shorter answer |
+| `max_output_tokens=1000` | A hard cap on what one call can cost |
+| `response.output_text` in place of `response.output[0]` | `output` is a list that can contain a reasoning item before the answer, so `output[0]` may print an object and not the text. `output_text` always gives the answer text |
+
+Create a file named `chat_app.py` and paste this in. You do not need to edit it:
 
 ```python
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
 
-load_dotenv()
+load_dotenv()                                   # reads .env
 
 client = OpenAI(
     base_url=os.environ["AZURE_OPENAI_BASE_URL"],
@@ -1053,33 +1174,96 @@ response = client.responses.create(
 print(response.output_text)
 ```
 
-Run it with `python chat_app.py`.
+To try your own question, change the `input=` line. To change the persona, change the `instructions=` line.
 
-### Keep a conversation going
+### Step 7: Run it
 
-The service stores each response for 30 days, so a follow-up only needs the previous response ID.
-
-```python
-follow_up = client.responses.create(
-    model=os.environ["CHAT_DEPLOYMENT"],
-    previous_response_id=response.id,
-    input="Now explain it to a college freshman.",
-)
-print(follow_up.output_text)
+```bash
+python chat_app.py
 ```
 
-### Stream the answer as it is generated
+**Expected result:** a short paragraph explaining private endpoints, printed in the terminal after a few seconds.
+
+If it fails:
+
+| Message | Cause | Fix |
+| :--- | :--- | :--- |
+| `KeyError: 'AZURE_OPENAI_BASE_URL'` | `.env` not found, misnamed (for example `.env.txt`), or in a different folder | Put `.env` next to `chat_app.py` and run the script from that folder |
+| `401` | Wrong or incomplete key | Copy **KEY 1** again |
+| `404` | Deployment name wrong, or the URL does not end in `/openai/v1` | Compare both with the **Code** tab in the portal |
+| `ModuleNotFoundError: No module named 'openai'` | Packages not installed, or the virtual environment is not active | Activate `.venv`, then run Step 3 again |
+| `403` or a connection error | Public access was disabled (Lab 8) | Set networking back to **All networks** |
+
+### Step 8: Keep a conversation going
+
+The service stores each response for 30 days, so a follow-up only needs the ID of the previous response. Create `chat_followup.py`:
 
 ```python
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
+client = OpenAI(
+    base_url=os.environ["AZURE_OPENAI_BASE_URL"],
+    api_key=os.environ["AZURE_OPENAI_API_KEY"],
+)
+MODEL = os.environ["CHAT_DEPLOYMENT"]
+
+first = client.responses.create(
+    model=MODEL,
+    input="Define a private endpoint in one sentence.",
+)
+print("Turn 1:", first.output_text)
+
+second = client.responses.create(
+    model=MODEL,
+    previous_response_id=first.id,              # links this turn to the first
+    input="Now explain it to a college freshman.",
+)
+print("Turn 2:", second.output_text)
+```
+
+Run `python chat_followup.py`. **Expected result:** two answers, where the second clearly continues from the first even though the second question never mentions private endpoints.
+
+### Step 9: Stream the answer as it is generated
+
+Streaming prints words as they arrive, which is what a chat interface needs. Create `chat_stream.py`:
+
+```python
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
+client = OpenAI(
+    base_url=os.environ["AZURE_OPENAI_BASE_URL"],
+    api_key=os.environ["AZURE_OPENAI_API_KEY"],
+)
+
 stream = client.responses.create(
     model=os.environ["CHAT_DEPLOYMENT"],
-    input="Summarise Azure OpenAI in one sentence.",
+    input="Summarise Azure OpenAI in three sentences.",
     stream=True,
 )
 for event in stream:
     if event.type == "response.output_text.delta":
-        print(event.delta, end="")
+        print(event.delta, end="", flush=True)
+print()
 ```
+
+Run `python chat_stream.py`. **Expected result:** the text appears piece by piece, not all at once.
+
+### Lab 4 checklist
+
+- [ ] `genai-labs` folder created, virtual environment active
+- [ ] `openai` and `python-dotenv` installed
+- [ ] `.env` holds your endpoint, key and deployment names, and is listed in `.gitignore`
+- [ ] `chat_app.py` prints an answer
+- [ ] `chat_followup.py` prints two linked answers
+- [ ] `chat_stream.py` prints the answer piece by piece
+
+Keep this folder. Labs 5, 6, 7, 11, 12 and 13 add more scripts to it and reuse the same `.env`.
 
 ### What else the Responses API does
 
@@ -1094,7 +1278,7 @@ The Chat Completions API (`client.chat.completions.create`) still works on the s
 <summary>▶ curl: the same call with no SDK</summary>
 
 ```bash
-curl -X POST "https://foundry-genai-lab-<yourname>.openai.azure.com/openai/v1/responses" \
+curl -X POST "https://foundry-genai-lab-<yourname>.services.ai.azure.com/openai/v1/responses" \
   -H "Content-Type: application/json" \
   -H "api-key: $AZURE_OPENAI_API_KEY" \
   -d '{
@@ -1559,7 +1743,7 @@ A deleted Foundry resource is kept in a soft-deleted state and still reserves it
 Users are not part of a resource group. If you did Lab 14, also delete `chat_user` and `trans_user`: **Microsoft Entra ID** → **Users** → select both → **Delete**.
 
 <details>
-<summary>▶ Azure CLI: delete and purge</summary>
+<summary>▶ Azure CLI: delete both resource groups</summary>
 
 ```bash
 # 1. Remove the lock on the network group
@@ -1575,12 +1759,59 @@ az group delete --name rg-genai-network --yes
 az group exists --name rg-genai-lab
 az group exists --name rg-genai-network
 
-# Release the resource name immediately
-az cognitiveservices account purge \
-    --name foundry-genai-lab-<yourname> \
-    --resource-group rg-genai-lab \
-    --location eastus2
 ```
+
+</details>
+
+### Purge soft-deleted Foundry resources
+
+Deleting a Foundry resource, or the resource group it was in, only soft-deletes it. The name stays reserved until you purge it, which is what causes `CustomDomainInUse` when you recreate a resource with the same name. Viewing and purging deleted resources needs the **Contributor** role at the subscription scope.
+
+<details>
+<summary>▶ Azure CLI: list and purge soft-deleted Foundry resources</summary>
+
+**1. List what is soft-deleted**
+
+```bash
+az cognitiveservices account list-deleted \
+  --query "[].{name:name, location:location, id:id}" -o table
+```
+
+This table has no resource group column. The resource group is inside the `id`, which has this shape:
+
+```
+/subscriptions/<sub>/providers/Microsoft.CognitiveServices/locations/<location>/resourceGroups/<rg-name>/deletedAccounts/<foundry-name>
+```
+
+To print the resource group as its own column:
+
+```bash
+az cognitiveservices account list-deleted --query "[].id" -o tsv \
+  | awk -F/ '{printf "%-35s %-25s %s\n", $11, $9, $7}'
+# columns: name, resource group, location
+```
+
+**2. Purge one resource**
+
+Use the name, resource group and location from step 1. The resource group no longer has to exist.
+
+```bash
+az cognitiveservices account purge \
+  --location eastus2 \
+  --resource-group <rg-name> \
+  --name <foundry-name>
+```
+
+**3. Purge every soft-deleted resource in the subscription**
+
+```bash
+az cognitiveservices account list-deleted --query "[].id" -o tsv | while read id; do
+  loc=$(echo "$id" | cut -d/ -f7); rg=$(echo "$id" | cut -d/ -f9); name=$(echo "$id" | cut -d/ -f11)
+  echo "Purging $name ($rg, $loc)"; az cognitiveservices account purge -l "$loc" -g "$rg" -n "$name"
+done
+```
+
+Step 3 purges **everything** in the list, not only the lab resource, and a purge cannot be undone. Run step 1 first and check the list. On a shared subscription, use step 2 for your own resource instead.
 
 </details>
 
