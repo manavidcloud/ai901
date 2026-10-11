@@ -419,8 +419,10 @@ az cognitiveservices account keys list \
 ### Deploy the chat model
 
 1. In the **Foundry portal**, open `genai-lab-project`.
-2. Select **Build** in the upper-right navigation, then **Models** in the left pane.
-3. Select **Deploy** → **Deploy a base model**.
+2. Open the model list. Either route works and both end at the same model card:
+   * **Build route:** select **Build** in the upper-right navigation, then **Models** in the left pane, then **Deploy** → **Deploy a base model**.
+   * **Discover route:** select **Discover** in the upper-right navigation, then **Models** in the left pane. This is the full model catalog, with descriptions and comparisons.
+3. Use **Build** when you already know the model you want. Use **Discover** when you want to browse and compare first. Afterwards, your deployed models are always listed under **Build** → **Models**.
 4. Search for **gpt-5.4-mini** and select it.
 5. Select **Deploy** → **Default settings**. (Choose **Custom settings** if you want to change the deployment name, deployment type or tokens-per-minute limit.)
 6. The portal opens the playground when the deployment succeeds. Note the deployment name: `gpt-5.4-mini`.
@@ -483,26 +485,92 @@ If a command fails with `DeploymentModelNotSupported`, that model, version or SK
 
 [⬆ Back to Lab Index](#lab-index)
 
-### Azure OpenAI models you can deploy (October 2026)
+### Azure OpenAI models you can deploy
 
-| Family | Model IDs | Use it for | Context window |
-| :--- | :--- | :--- | :--- |
-| **GPT-6.1 / GPT-6** | `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-astra`, `gpt-6-luna` | Hardest reasoning, long agentic work | 1,050,000 (128,000 output) |
-| **GPT-5.6** | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | Flagship general work. GA until Jan 2028 | 1,050,000 (128,000 output) |
-| **GPT-5.5 / GPT-5.4** | `gpt-5.5`, `gpt-5.4`, `gpt-5.4-pro` | Strong general reasoning | 1,050,000 (128,000 output) |
-| **GPT-5.4 small** | `gpt-5.4-mini`, `gpt-5.4-nano` | **Learning, high volume, low cost.** GA until Sep 2027 | 400,000 (128,000 output) |
-| **Coding** | `gpt-5.3-codex`, `gpt-5.2-codex` | Code generation and agents (Responses API only) | 400,000 |
-| **Embeddings** | `text-embedding-3-small` (1,536 dims), `text-embedding-3-large` (3,072 dims) | Vector search and RAG. GA until Feb 2028 | 8,192 input |
-| **Images** | `gpt-image-2`, `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` | Image generation and editing | n/a |
-| **Audio** | `gpt-realtime-2.1`, `gpt-realtime-2.1-mini`, `gpt-audio-1.5`, `gpt-4o-mini-transcribe`, `gpt-4o-mini-tts` | Voice agents, speech-to-text, text-to-speech | n/a |
-| **Video** | `sora-2` (preview) | Video generation | n/a |
-| **Routing** | `model-router` | Sends each prompt to a suitable model automatically | n/a |
+**How to read the cost column.** Price is in US dollars per 1 million tokens, shown as **input / output**, for a **Global Standard** deployment. Output is always the more expensive side, so the tier is set by the output price:
+
+| Tier | Output price per 1M tokens | Meaning |
+| :--- | :--- | :--- |
+| **Free** | n/a | **No Azure OpenAI model is free.** A free Azure account gives starting credit, which these models spend |
+| **Low** | under $2 | Safe for learning and for high-volume work |
+| **Medium** | $2 to $15 | Everyday production work |
+| **High** | above $15 | Use only when the task needs it |
+| **Very high** | above $100 | Rare, specialist use |
+
+Prices change. Confirm on the [Azure OpenAI pricing page](https://azure.microsoft.com/pricing/details/azure-openai/) before you estimate a real project.
+
+#### Text and reasoning models
+
+All of these accept **text and images as input** and return **text**. All are reasoning models and work with the Responses API.
+
+| Family | Model ID | Use it for | Context window | Cost (input / output) | Good for, and why |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **GPT-6.1** | `gpt-6.1-sol` | • Chat<br>• Reasoning<br>• Image understanding<br>• Translation<br>• Tool calling (Responses API only) | 1,050,000<br>(128,000 output) | **Medium**<br>$2 / $10 | The newest general model. A sound default for new production apps: current generation at a mid price |
+| **GPT-6** | `gpt-6-astra` | • Deep reasoning<br>• Long multi-step agent work<br>• Chat, image understanding | 1,050,000<br>(128,000 output) | **High**<br>$10 / $50 | The top GPT-6 tier. Use for the hardest problems where a wrong answer is costly. Azure may apply extra safety controls to it |
+| **GPT-6** | `gpt-6-sol` | • Chat<br>• Reasoning<br>• Image understanding<br>• Translation<br>• Tool calling | 1,050,000<br>(128,000 output) | **Medium**<br>$2 / $10 | Balanced GPT-6 model for general application work |
+| **GPT-6** | `gpt-6-luna` | • Chat<br>• Classification and extraction<br>• Summarising<br>• Translation | 1,050,000<br>(128,000 output) | **Low**<br>$0.10 / $0.50 | The cheapest current chat model, with the full large context window. Best value for high volume, if your subscription has GPT-6 quota |
+| **GPT-5.6** | `gpt-5.6-sol` | • Reasoning<br>• Chat, image understanding<br>• Agents and tool calling | 1,050,000<br>(128,000 output) | **High**<br>$4 / $20 | Strongest GPT-5 generation model. Choose it when you need to stay on the GPT-5 family |
+| **GPT-5.6** | `gpt-5.6-terra` | • Chat<br>• Reasoning<br>• Image understanding<br>• Translation | 1,050,000<br>(128,000 output) | **Medium**<br>$2 / $12 | Mid tier of GPT-5.6: most of the quality for less than `sol` |
+| **GPT-5.6** | `gpt-5.6-luna` | • Chat<br>• Classification and extraction<br>• Summarising | 1,050,000<br>(128,000 output) | **Low**<br>$0.20 / $1.20 | Small, fast and cheap with the large context window |
+| **GPT-5.5** | `gpt-5.5` | • Reasoning<br>• Chat, image understanding | 1,050,000<br>(128,000 output) | **High**<br>$5 / $30 | Now costs more than the newer GPT-6 `sol` models. Pick it only if an existing app is tested on it |
+| **GPT-5.4** | `gpt-5.4` | • Chat<br>• Reasoning<br>• Image understanding | 1,050,000<br>(128,000 output) | **Medium**<br>$2.50 / $15 | General model of the 5.4 family. Larger than `mini` when answers need more depth |
+| **GPT-5.4** | `gpt-5.4-pro` | • Very deep reasoning only<br>• Responses API only | 1,050,000<br>(128,000 output) | **Very high**<br>$30 / $180 | Research-grade problems. Far too expensive for normal chat |
+| **GPT-5.4** | `gpt-5.4-mini` | • Chat<br>• Reasoning<br>• Image understanding<br>• Translation<br>• Tool calling | 400,000<br>(128,000 output) | **Medium**<br>$0.75 / $4.50 | **Used in the labs.** A capable small model at the low end of the medium tier |
+| **GPT-5.4** | `gpt-5.4-nano` | • Simple chat<br>• Classification and extraction<br>• Routing and tagging | 400,000<br>(128,000 output) | **Low**<br>$0.20 / $1.25 | Fast, simple, repetitive tasks at volume |
+| **Coding** | `gpt-5.3-codex` | • Code generation<br>• Code review and refactoring<br>• Coding agents<br>• Responses API only | 400,000<br>(128,000 output) | **Medium**<br>$1.75 / $14 | Tuned for software work. Use it for coding assistants, not general chat |
+| **Routing** | `model-router` | • Chat where request difficulty varies a lot | Depends on the model chosen | Depends on the model chosen | Picks a suitable model for each prompt, so easy questions go to a cheap model automatically |
+
+Text translation needs no special model: any chat model above translates between languages. For **speech** translation see the audio table.
+
+#### Embedding models
+
+Input is text, output is a vector. They cannot chat.
+
+| Model ID | Use it for | Max input | Vector size | Cost (per 1M tokens) | Good for, and why |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `text-embedding-3-small` | • Semantic search<br>• RAG<br>• Clustering and deduplication | 8,192 tokens | 1,536 | **Low**<br>$0.02 | **Used in the labs.** The default choice: cheap, fast, small index |
+| `text-embedding-3-large` | • Semantic search and RAG where accuracy matters most<br>• Multilingual content | 8,192 tokens | 3,072 | **Low**<br>$0.13 | Best retrieval quality. Costs more per token and doubles the index size |
+
+#### Image, audio and video models
+
+| Type | Model ID | Use it for | Cost | Good for, and why |
+| :--- | :--- | :--- | :--- | :--- |
+| **Image** | `gpt-image-2` | • Create images from text<br>• Edit existing images | **High**<br>$8 / $30 per 1M image tokens | General image generation and editing |
+| **Image** | `gpt-image-2.5-flare`<br>`gpt-image-2.5-sunburst` | • Create images from text<br>• Edit existing images | **High**<br>$8 / $30 per 1M image tokens | The newest image models, at the same price as `gpt-image-2`. Compare the two variants in the playground for your style |
+| **Voice agent** | `gpt-realtime-2.1` | • Live speech in, speech out<br>• Voice assistants and call bots | **High**<br>Audio $32 / $64<br>Text $4 / $24 | Best quality for natural, low-delay voice conversation |
+| **Voice agent** | `gpt-realtime-2.1-mini` | • Live speech in, speech out | **High**<br>Audio $10 / $20<br>Text $0.60 / $2.40 | Same job at roughly a third of the audio price. Start here |
+| **Speech to text (live)** | `gpt-live-transcribe` | • Live captions<br>• Meeting transcription | Billed per audio duration | Microsoft's recommended model for real-time transcription |
+| **Speech to text (files)** | `gpt-transcribe` | • Transcribe recorded audio files up to 25 MB | See pricing page | Batch transcription of recordings. Supports language hints |
+| **Speech translation** | `gpt-realtime-translate` | • Live translation with translated speech and text out | Billed per audio duration | Real-time interpreting between languages |
+| **Text to speech** | `gpt-4o-mini-tts` | • Read text aloud<br>• Steer the tone and speaking style | **Medium**<br>$0.60 text in / $12 audio out | Natural voices where you want to control style |
+| **Audio chat** | `gpt-audio-1.5` | • Audio and text in, audio and text out, not real time | See pricing page | Audio understanding and generation when low latency is not needed |
+| **Video** | `sora-2` (preview) | • Create short video clips from text | **High**<br>Billed per second of video | Video generation. Preview, so not for production |
+
+#### Quick picker
+
+| I want to... | Start with | Why |
+| :--- | :--- | :--- |
+| Learn and follow these labs | `gpt-5.4-mini` | Capable, affordable, and used in every lab |
+| Run high volume at the lowest cost | `gpt-6-luna` | Lowest price with the largest context window |
+| Build a general production chat app | `gpt-6.1-sol` | Newest generation at a medium price |
+| Solve the hardest reasoning problems | `gpt-6-astra` | Top tier; pay for it only when needed |
+| Build a coding assistant | `gpt-5.3-codex` | Tuned for code |
+| Build RAG or semantic search | `text-embedding-3-small` | Cheap and good enough for most content |
+| Read very long documents in one request | Any model with a 1,050,000 window | Fits about 920,000 input tokens |
+| Generate images | `gpt-image-2.5-flare` or `gpt-image-2.5-sunburst` | Newest image models |
+| Build a voice assistant | `gpt-realtime-2.1-mini` | Real-time speech at the lower price |
+| Transcribe recordings | `gpt-transcribe` | Made for audio files |
+| Translate live speech | `gpt-realtime-translate` | Made for real-time translation |
+| Let Azure choose per request | `model-router` | Sends easy prompts to cheaper models |
 
 Notes:
 
-* GPT-5.6 and GPT-6 need a quota request on lower quota tiers. `gpt-5.4-mini` deploys with default quota, which is why the labs use it.
-* You cannot switch embedding models on an existing index. Changing model means re-embedding every document.
-* The same Foundry resource also deploys models from Anthropic (Claude), xAI (Grok), DeepSeek, Meta (Llama), Mistral and Microsoft (Phi). Models from partners need an Azure Marketplace subscription step during deployment.
+* **Long requests cost more.** On GPT-5.5, GPT-5.6 and GPT-6 models, a request with a very large input is billed at a higher "long context" rate: about double for input and about one and a half times for output. The prices above are the normal short-context rates.
+* **Cheaper ways to run the same model:** cached input (a repeated prompt prefix) is billed at a fraction of the input price, and Batch deployments cost about half.
+* **Quota:** GPT-5.6 and GPT-6 models need a quota request on lower subscription tiers. If `gpt-6-luna` deploys in your subscription, you can use it in the labs by changing `CHAT_DEPLOYMENT` in `.env`.
+* **Embeddings are not interchangeable.** Changing the embedding model means re-embedding every document in the index.
+* **Retirement:** every model has a retirement date. Look it up in the [model retirement schedule](https://learn.microsoft.com/en-us/azure/foundry/openai/concepts/model-retirement-schedule) or with the CLI block at the end of this section.
+* **Other providers:** the same Foundry resource also deploys models from Anthropic (Claude), xAI (Grok), DeepSeek, Meta (Llama), Mistral and Microsoft (Phi). Models from partners need an Azure Marketplace subscription step during deployment.
 
 ### Deployment types
 
