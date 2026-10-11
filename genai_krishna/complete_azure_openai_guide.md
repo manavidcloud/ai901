@@ -499,9 +499,9 @@ If a command fails with `DeploymentModelNotSupported`, that model, version or SK
 
 Prices change. Confirm on the [Azure OpenAI pricing page](https://azure.microsoft.com/pricing/details/azure-openai/) before you estimate a real project.
 
-#### Text and reasoning models
+#### Chat models (text and reasoning)
 
-All of these accept **text and images as input** and return **text**. All are reasoning models and work with the Responses API.
+These are the models you chat with. On Azure there is no separate "chat" family and "reasoning" family any more: every current chat model is also a reasoning model. All of them accept **text and images as input**, return **text**, and work with the Responses API.
 
 | Family | Model ID | Use it for | Context window | Cost (input / output) | Good for, and why |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -584,6 +584,30 @@ Notes:
 | **Developer** | `DeveloperTier` | Any Azure region | Pay per token | Testing a fine-tuned model (24-hour lifetime, no SLA) |
 
 Data **at rest** always stays in the geography of your resource. The deployment type only decides where **inference** runs.
+
+### Does the region change the price?
+
+**On a Global Standard deployment, no.** The price is the same in every region. What changes the price is the **deployment type**, and for Data Zone deployments, **which zone** the region belongs to.
+
+Example: `gpt-5.4-mini`, US dollars per 1M tokens (input / output).
+
+| Deployment type | Regions | Price | Compared with Global Standard |
+| :--- | :--- | :--- | :--- |
+| **Global Standard** | Any region (East US 2, Sweden Central, South India, Japan East and others) | $0.75 / $4.50 | Baseline. **Cheapest pay-per-token option everywhere** |
+| **Data Zone Standard, US zone** | East US 2 and other US regions | $0.825 / $4.95 | About 10% more |
+| **Data Zone Standard, EU zone** | Sweden Central, West Europe and other EU regions | $0.825 / $4.95 | About 10% more |
+| **Data Zone Standard, APAC zone** | South India, Central India, Japan East and other APAC regions | $0.90 / $5.40 | About 20% more |
+| **Global Batch** | Any region | $0.375 / $2.25 | Half price, results within 24 hours |
+| **Priority processing** | Any region | $1.50 / $9.00 | Double, for faster responses |
+
+What this means in practice:
+
+* **For learning, pick Global Standard in any region.** No region is cheaper than another, so choose by what is available and close to you.
+* **Region decides availability, not price.** A new model may be offered in only a few regions at first. Check with the CLI block in Lab 2.
+* **Region decides where data rests.** Stored data stays in the geography of your resource, whichever deployment type you use.
+* **Keeping processing inside a zone costs extra,** and the APAC zone costs more than the US and EU zones.
+* **Regional Standard** (processing inside one geography) is offered for fewer models and regions, and costs more than Global Standard where it exists. The embedding models, for example, are about 10% more on a regional deployment.
+* **Other services are priced by region.** Azure AI Search, storage and virtual machines do vary by region, so the total bill for the RAG lab can differ slightly between regions even though the model price does not.
 
 ### Model lifecycle
 
