@@ -2223,6 +2223,96 @@ print(response.output_text)
 
 For agents, **Foundry IQ** in the Foundry portal is the managed knowledge layer built on Azure AI Search. It turns your content into reusable, permission-aware knowledge bases.
 
+### RAG with real company documents
+
+Lab 7 uploads a few PDFs by hand. A real system works the same way underneath, with three differences: the documents arrive by an automated sync and not by hand, access is controlled per team, and users reach it through an application.
+
+#### 1. Where the documents must be
+
+**The rule:** the documents must be in a place Azure AI Search can read. If they are not there yet, you bring them into Azure first, and a storage container is the usual place, exactly as in Lab 7.
+
+Two different stores are involved, and they hold different things:
+
+| Place | What it holds | When it is read |
+| :--- | :--- | :--- |
+| **Storage container** (such as `docs`) | The original files: PDFs, Word documents | By the indexer, when the index is built and again when files change |
+| **Azure AI Search index** | The chunks of text and their embeddings (vectors) | On every chat question |
+
+So a chat question is answered from the **index**. The storage container is only the source the index was built from.
+
+Which case are you in?
+
+| Your documents are | What you do |
+| :--- | :--- |
+| **Not in Azure yet:** on laptops, an on-premises file server, or an application with no connector | **Copy them into a storage container.** This is the common starting point for a company. Use an automated sync or pipeline, not manual uploads |
+| **Already in Azure Blob Storage or a Data Lake** | Point the indexer at the existing container. No second upload |
+| **In Microsoft OneLake (Fabric)** | Same; the Import data wizard supports it |
+| **In Azure SQL, Cosmos DB or another Azure data store** | Use the matching Azure AI Search indexer |
+| **In SharePoint or another Microsoft 365 location** | Use a connector; check its current status first |
+
+Three things that hold in every case:
+
+* **Upload what the assistant should answer from, not everything.** An HR assistant needs HR policies, not the finance archive. Smaller, relevant content gives better answers and costs less.
+* **You upload once, then the indexer keeps up.** It runs on a schedule and picks up new, changed and deleted files from the container.
+* **You never upload documents into Foundry or to the model.** For each question the model receives only the few chunks the search found, and they are not used to train models.
+
+#### 2. Each team sees only its own knowledge
+
+The rule: **if a user cannot open a document, the assistant must not answer from it.** The model cannot enforce this. It answers from whatever chunks it is given, so the control has to happen in the search step, before the model is called.
+
+| Approach | How it works | Use it when |
+| :--- | :--- | :--- |
+| **Security filter in one index** | Every chunk stores the IDs of the groups allowed to read it. Each search adds a filter for the signed-in user's groups | Many teams, overlapping access. The most common choice |
+| **One index per department** | HR, Finance and Engineering each have their own index. The app picks the index from the user's department | A few clearly separate teams |
+| **Separate search service and Foundry resource** | Nothing is shared, including keys, network and quota | Highly confidential content such as legal or board material |
+
+For confidential content, add these on top:
+
+| Control | Why |
+| :--- | :--- |
+| Private endpoints on Storage, AI Search and Foundry | No public path to the data |
+| Entra ID and managed identities, keys turned off | Every access is tied to an identity |
+| Guardrails with PII detection and Prompt Shields for indirect attacks | Stops personal data leaking, and stops instructions hidden inside a document from steering the model |
+| Logging of who asked what, and which documents were used | Audit trail |
+| Keep the most sensitive material out, or in its own index | What is not indexed cannot be surfaced |
+
+#### 3. The frontend never talks to the model or the search service
+
+A frontend runs in the user's browser, so anything it holds can be read by the user. If it called Azure AI Search or the model directly, its credentials would be exposed and the security filter could be bypassed. The retrieval and the model call therefore happen in **your backend**.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant F as Frontend (browser)
+    participant E as Microsoft Entra ID
+    participant B as Your backend API
+    participant S as Azure AI Search
+    participant M as Foundry model
+
+    U->>F: Open the app
+    F->>E: Sign in
+    E-->>F: Token with the user's identity and groups
+    U->>F: Ask a question
+    F->>B: Question + user token
+    B->>B: Read the user's groups from the token
+    B->>S: Search, filtered to those groups
+    S-->>B: Only chunks this user may read
+    B->>M: Question + permitted chunks
+    M-->>B: Grounded answer
+    B-->>F: Answer + source links
+    F-->>U: Show the answer
+```
+
+| Part | Its job |
+| :--- | :--- |
+| **Frontend** | Sign the user in, send the question, show the answer and sources. Holds no keys |
+| **Backend** | Check who the user is, run the filtered search, call the model, return the answer. This is the Lab 7.6 script turned into an API |
+| **Azure AI Search** | Return only the chunks the user is allowed to read |
+| **Foundry model** | Write the answer from the chunks it was given |
+
+The backend reaches Search and Foundry through private endpoints with its managed identity, as in the cost-effective production design in the Prerequisites and Design section.
+
 ---
 
 ## 12. Lab 8: Network Isolation with Private Endpoints
