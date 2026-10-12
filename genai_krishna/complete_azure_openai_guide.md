@@ -2241,18 +2241,79 @@ The wizard creates a data source, an index, a skillset and an indexer. It chunks
 
 ### Lab 7.6: Ask questions from Python
 
-```bash
-pip install azure-search-documents azure-identity
+**File:** `lab7.6-rag_app.py`. **Goal:** ask a question, fetch the matching chunks from your index, and have the model answer from them.
+
+**Where this runs:** on your laptop, in the same folder as the earlier scripts. Everything you need is listed here.
+
+**What "keyless for both services" means.** The script talks to two services: Azure AI Search (to find chunks) and your Foundry model (to write the answer). It uses **no key for either one**. It signs in to both as **you**, using the sign-in from `az login`. So two things must be true before it can work: you are signed in, and your account has a role on each service.
+
+**1. Check the four things the script depends on**
+
+| Need | How to check | If it is missing |
+| :--- | :--- | :--- |
+| You are signed in | Run `az account show --query user.name --output tsv`. It prints your account | Run `az login` |
+| Your account can **query the index** | **Azure portal** → search service → **Access control (IAM)** → **Check access** → search your account. **Search Index Data Reader** is listed | Assign it (Lab 7.3, Part A) |
+| Your account can **call the model** | **Azure portal** → Foundry resource → **Access control (IAM)** → **Check access** → search your account. **Foundry User** is listed | **+ Add** → **Add role assignment** → role **Foundry User** → **Members**: your account → **Review + assign** |
+| The search service accepts sign-ins | Search service → **Settings** → **Keys**. API access control is **Role-based access control** or **Both** | Change it there and save |
+
+**2. Install the two extra packages**
+
+Add them to `requirements.txt`, so the file reads:
+
+```
+openai
+python-dotenv
+numpy
+azure-identity
+azure-search-documents
 ```
 
-Add to `.env`:
+Then install with the command that matches your environment:
+
+```bash
+pip install -r requirements.txt       # standard environment
+uv pip install -r requirements.txt    # uv environment
+```
+
+| Package | What it does |
+| :--- | :--- |
+| `azure-identity` | Finds your `az login` sign-in and gets access tokens |
+| `azure-search-documents` | The client that queries the search index |
+
+**3. Add two lines to `.env`**
 
 ```env
 SEARCH_ENDPOINT="https://<your-search-service>.search.windows.net"
-SEARCH_INDEX="<index name from Lab 7.5>"
+SEARCH_INDEX="<your-index-name>"
 ```
 
-`rag_app.py` (keyless for both services, so run `az login` first and complete Lab 6):
+**How to find `SEARCH_ENDPOINT`:**
+
+1. **Azure portal** → open your **search service**.
+2. Stay on the **Overview** page.
+3. Find the field named **Url**, on the right side of the top section.
+4. Copy it. It looks like `https://srch-genai-lab-yourname.search.windows.net`.
+5. Paste it as the value of `SEARCH_ENDPOINT`.
+
+**How to find `SEARCH_INDEX`:**
+
+1. In the same search service, left menu → **Search management** → **Indexes**.
+2. The list shows the index the wizard created in Lab 7.4. Its name starts with the prefix you typed there, `rag-lab`.
+3. Copy the name **exactly** as shown, including any numbers after the prefix.
+4. Paste it as the value of `SEARCH_INDEX`.
+
+Your `.env` now has six lines. The first four are from Lab 4 and stay as they are:
+
+| Setting | Used for | Used by this script? |
+| :--- | :--- | :--- |
+| `AZURE_OPENAI_BASE_URL` | Address of your model | Yes |
+| `AZURE_OPENAI_API_KEY` | Key for the model | **No.** This script signs in instead |
+| `CHAT_DEPLOYMENT` | Name of the chat model deployment | Yes |
+| `EMBEDDING_DEPLOYMENT` | Name of the embedding deployment | No. The index embeds the question itself |
+| `SEARCH_ENDPOINT` | Address of your search service | Yes |
+| `SEARCH_INDEX` | Name of the index to query | Yes |
+
+**4. Create `lab7.6-rag_app.py`**
 
 ```python
 import os
@@ -2263,13 +2324,16 @@ from azure.search.documents import SearchClient
 from azure.search.documents.models import VectorizableTextQuery
 
 load_dotenv()
-credential = DefaultAzureCredential()
+credential = DefaultAzureCredential()          # your az login sign-in, used for both services
 
+# Client 1: the search index
 search = SearchClient(
     endpoint=os.environ["SEARCH_ENDPOINT"],
     index_name=os.environ["SEARCH_INDEX"],
     credential=credential,
 )
+
+# Client 2: the model
 llm = OpenAI(
     base_url=os.environ["AZURE_OPENAI_BASE_URL"],
     api_key=get_bearer_token_provider(credential, "https://ai.azure.com/.default"),
@@ -2297,6 +2361,44 @@ response = llm.responses.create(
 )
 print(response.output_text)
 ```
+
+To ask something else, change the `question =` line.
+
+**5. Run it**
+
+```bash
+python lab7.6-rag_app.py
+```
+
+**Expected result:** an answer based on your PDFs, with the source file name in square brackets, such as `[Northwind_Standard_Benefits_Details.pdf]`.
+
+**What the script does, in order:**
+
+| Part of the code | What it means |
+| :--- | :--- |
+| `DefaultAzureCredential()` | "Use my sign-in." One credential is shared by both clients |
+| `SearchClient(...)` | Connects to your index, using the endpoint and index name from `.env` |
+| `OpenAI(... api_key=get_bearer_token_provider(...))` | Connects to your model with a sign-in token where the key used to go |
+| `search_text=question` | The keyword half of the search |
+| `VectorizableTextQuery(text=question, ...)` | The meaning half of the search. The index turns the question into a vector by itself |
+| `k_nearest_neighbors=5`, `top=5` | Bring back the 5 best-matching chunks |
+| `fields="text_vector"` | The index field that holds the embeddings |
+| `select=["title", "chunk"]` | Return only the file name and the chunk text |
+| `sources = "\n\n".join(...)` | Glue the 5 chunks into one block of text, each labelled with its file name |
+| `instructions=...` | Tell the model to answer only from those sources and to cite them |
+| `input=f"Sources:...Question:..."` | Send the chunks and the question together |
+
+**If it fails:**
+
+| Message | Cause | Fix |
+| :--- | :--- | :--- |
+| `KeyError: 'SEARCH_ENDPOINT'` or `'SEARCH_INDEX'` | The two lines are missing from `.env` | Repeat step 3 |
+| `DefaultAzureCredential failed to retrieve a token` | Not signed in | Run `az login` |
+| `403` or `Forbidden` from the search call | **Search Index Data Reader** is missing, or the search service accepts keys only | Recheck step 1, rows 2 and 4, then wait a few minutes |
+| `401` or `403` from the model call | **Foundry User** is missing on the Foundry resource | Recheck step 1, row 3, then wait a few minutes |
+| `The index '...' was not found` | `SEARCH_INDEX` does not match the real name | Copy the name again from **Search management** → **Indexes** |
+| An error naming the field `text_vector`, `title` or `chunk` | Your index uses different field names | Open the index → **Fields** tab, and use the names shown there |
+| `ModuleNotFoundError: No module named 'azure.search'` | The package is not installed in the active environment | Repeat step 2 |
 
 ### RAG quality checklist
 
