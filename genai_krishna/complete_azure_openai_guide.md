@@ -2100,11 +2100,11 @@ The **Import data** wizard in Azure AI Search builds the whole ingestion side fo
 | **Resource group** | `rg-genai-lab` | The storage here exists only for this app |
 | **Storage account name** | A globally unique name, 3 to 24 characters, lowercase letters and numbers only, for example `stgenailab<yourname>` | No hyphens or capitals are allowed |
 | **Region** | `East US 2` | Same region as the rest of the lab |
-| **Primary service** | **Azure Blob Storage or Azure Data Lake Storage Gen 2** | The PDFs are stored as blobs. The other choices (Azure Files, tables and queues) are for file shares and messaging |
+| **Primary service** | **Azure Blob Storage or Azure Data Lake Storage** | The PDFs are stored as blobs. This choice only tailors the guidance on the next tabs; it does not make the account Data Lake Storage Gen2 (the hierarchical namespace setting in step 3 does that). The other choices (Azure Files, tables and queues) are for file shares and messaging |
 | **Performance** | **Standard** | Required by the Import data wizard. Premium is not supported for this |
 | **Redundancy** | **Locally-redundant storage (LRS)** | The cheapest option, and enough for practice data |
 
-3. Leave the other tabs on their defaults. In particular, on the **Advanced** tab leave **Enable hierarchical namespace** unticked: that keeps it plain Blob Storage, which is what this lab uses.
+3. Leave the other tabs on their defaults. In particular, on the **Advanced** tab leave **Enable hierarchical namespace** unticked: that keeps it plain Blob Storage, which is what this lab uses. The notes on that tab saying SFTP and NFS v3 need hierarchical namespace don't apply here, because this lab uses neither. If you ticked it by mistake, you don't need to recreate the account (the setting can't be switched off later anyway): in Lab 7.4 step 2, pick **Azure Data Lake Storage Gen2** instead of **Azure Blob Storage**.
 4. **Review + create** → **Create**, then **Go to resource**.
 
 **2. Create the container and upload documents**
@@ -2224,7 +2224,7 @@ What each role is for:
 ### Lab 7.4: Run the Import data wizard
 
 1. Open the search service → **Overview** → **Import data**.
-2. Data source: **Azure Blob Storage**. Scenario: **RAG**.
+2. Data source: **Azure Blob Storage**. Scenario: **RAG**. If your storage account is missing from the list in the next step, check whether hierarchical namespace is enabled on it (storage account → **Overview** → **Properties** → **Data Lake Storage**). If it is, the account is Data Lake Storage Gen2: go back and pick **Azure Data Lake Storage Gen2** as the data source instead. All the remaining steps are the same.
 3. **Connect to your data:** pick your subscription, storage account and the `docs` container. Tick **Authenticate using managed identity** and keep **System-assigned**. **Next**.
 4. **Vectorize your text:** Kind **Microsoft Foundry** → your subscription → project `genai-lab-project` → model deployment `text-embedding-3-small`. Authentication type **System assigned identity**. Tick the billing acknowledgement. **Next**.
 5. **Vectorize and enrich your images:** skip. **Next**.
@@ -3104,6 +3104,7 @@ Use **Foundry Project Manager** in place of Foundry User for a team lead who sho
 | Quota error when deploying | No quota left for that model in the region | Lower the tokens-per-minute value, free quota from another deployment, or request more |
 | `CustomDomainInUse` | Resource name taken, often by your own soft-deleted resource | Choose another name or purge the old one (Lab 10) |
 | Import data wizard fails | A resource has public access disabled, or a role is missing | Enable public access during the wizard; recheck the role table in Lab 7 |
+| Storage account missing from the list in the Import data wizard | Hierarchical namespace is enabled on the account, so it is Data Lake Storage Gen2 and the **Azure Blob Storage** data source does not list it | Pick **Azure Data Lake Storage Gen2** as the data source (Lab 7.4 step 2). The setting can't be switched off on an existing account |
 
 ---
 
