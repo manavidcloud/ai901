@@ -270,13 +270,20 @@ Read it as: the app never changes its URL. The private DNS zone makes the same h
 
 Do this first. It builds the isolated network group from the target design. The workload group `rg-genai-lab` is not created here; Lab 1 creates it together with the Foundry resource. A resource group, a VNet, subnets and a lock are all **free**.
 
-#### Step 1: Create the network resource group
+| Sub-lab | What you do |
+| :--- | :--- |
+| **0.1** | Create the network resource group |
+| **0.2** | Create the VNet and both subnets inside it |
+| **0.3** | Protect the group with a delete lock |
+| **0.4** | Check the result |
+
+#### Lab 0.1: Create the network resource group
 
 1. **Azure portal** → search **Resource groups** → **+ Create**.
 2. **Subscription:** your subscription. **Resource group:** `rg-genai-network`. **Region:** `East US 2`.
 3. **Review + create** → **Create**.
 
-#### Step 2: Create the virtual network and both subnets in the network group
+#### Lab 0.2: Create the virtual network and both subnets in the network group
 
 1. **Azure portal** → **Create a resource** → search **Virtual network** → **Create**.
 2. **Basics:** resource group **`rg-genai-network`**, name `vnet-genai-lab`, region `East US 2`.
@@ -285,14 +292,14 @@ Do this first. It builds the isolated network group from the target design. The 
 5. Select **+ Add a subnet**: name `snet-apps`, range `10.0.2.0/24` → **Add**.
 6. **Review + create** → **Create**.
 
-#### Step 3: Protect the network group with a delete lock
+#### Lab 0.3: Protect the network group with a delete lock
 
 1. Open the resource group `rg-genai-network` → **Settings** → **Locks** → **+ Add**.
 2. **Lock name:** `do-not-delete`. **Lock type:** **Delete**. → **OK**.
 
 Nobody, including you, can now delete the VNet by accident. You remove this lock in Lab 10 before clean-up.
 
-#### Step 4: Check it
+#### Lab 0.4: Check it
 
 1. Open `rg-genai-network`. It should contain only `vnet-genai-lab`.
 2. Open `vnet-genai-lab` → **Settings** → **Subnets**. You should see exactly these two:
@@ -366,7 +373,7 @@ Design rules to remember:
 * Keep the **network in its own resource group**. Workloads attach to a subnet from their own group.
 * Give private endpoints **their own subnet**. Apps go in a different subnet.
 * Put **private DNS zones with the network**, because every workload on the VNet depends on them.
-* A real production design starts network-first: VNet, subnets and private DNS zones exist before any AI resource, and the resource is created with public access already disabled (the **Network** tab in Lab 1, Option B).
+* A real production design starts network-first: VNet, subnets and private DNS zones exist before any AI resource, and the resource is created with public access already disabled (the **Network** tab in Lab 1.2).
 
 ### Networking facts to remember
 
@@ -626,7 +633,15 @@ You work in two portals:
 
 **You need:** an Azure subscription and the **Owner** role on it (or on the resource group). Owner is needed later to assign roles. No access request form is needed for the models used here.
 
-### Option A: Foundry portal (fastest, creates resource and project together)
+**The sub-labs:**
+
+| Sub-lab | What you do | Where |
+| :--- | :--- | :--- |
+| **1.1** | Create the resource and project together. **Do this or 1.2, not both** | Foundry portal |
+| **1.2** | Create the resource with full control over network, identity and tags | Azure portal |
+| **1.3** | Find the endpoint and key you will use from Lab 4 onward | Azure portal |
+
+### Lab 1.1: Create the resource and project in the Foundry portal (Option A, fastest)
 
 1. Open https://ai.azure.com and sign in.
 2. Make sure the **New Foundry** toggle at the top is **on**.
@@ -637,7 +652,7 @@ You work in two portals:
    * **Location:** `East US 2`.
 6. Select **Create project** and wait for the project overview page.
 
-### Option B: Azure portal (more control over network, identity and tags)
+### Lab 1.2: Create the resource in the Azure portal (Option B, more control)
 
 1. Open the create page directly: https://portal.azure.com/#create/Microsoft.CognitiveServicesAIFoundry
    (or search the top bar for **Microsoft Foundry** → **Create**).
@@ -689,7 +704,7 @@ az cognitiveservices account show \
 
 </details>
 
-### Find your endpoint and key
+### Lab 1.3: Find your endpoint and key
 
 1. In the **Azure portal**, open the resource `foundry-genai-lab-<yourname>`.
 2. In the left menu select **Resource Management** → **Keys and Endpoint**.
@@ -718,7 +733,15 @@ az cognitiveservices account keys list \
 
 [⬆ Back to Lab Index](#lab-index)
 
-### Deploy the chat model
+**The sub-labs:**
+
+| Sub-lab | What you do | Where |
+| :--- | :--- | :--- |
+| **2.1** | Deploy the chat model `gpt-5.4-mini` | Foundry portal |
+| **2.2** | Deploy the embedding model `text-embedding-3-small` | Foundry portal |
+| **2.3** | Check that both deployments succeeded | Foundry portal |
+
+### Lab 2.1: Deploy the chat model
 
 1. In the **Foundry portal**, open `genai-lab-project`.
 2. Open the model list. Either route works and both end at the same model card:
@@ -731,41 +754,11 @@ az cognitiveservices account keys list \
 5. Select **Deploy** → **Default settings**. (Choose **Custom settings** if you want to change the deployment name, deployment type or tokens-per-minute limit.)
 6. The portal opens the playground when the deployment succeeds. Note the deployment name: `gpt-5.4-mini`.
 
-### Deploy the embedding model
+### Lab 2.2: Deploy the embedding model
 
-Repeat steps 2 to 5 and search for **text-embedding-3-small**. Note the deployment name.
+Repeat steps 2 to 5 of Lab 2.1 and search for **text-embedding-3-small**. Note the deployment name.
 
-### If the model is not listed or cannot be deployed
-
-Start on the model page itself: on the right side, under **Availability**, select **View availability** to see the regions and deployment types this model is offered in. Then work through these three checks in order.
-
-| Check | What to look at | Fix |
-| :--- | :--- | :--- |
-| **1. Region of your Foundry resource** | Azure portal → your Foundry resource → **Overview** → **Location**. Not every Azure region hosts these models. **Central India is not on the list; South India is.** | The region of a resource cannot be changed. Create a new Foundry resource in a supported region (Lab 1) |
-| **2. Deployment type** | In **Deploy** → **Custom settings**, look at **Deployment type**. `gpt-5.4-mini` is offered as **Global Standard** and **Data Zone Standard** only. It is **not** offered as regional **Standard** in any region | Choose **Global Standard** |
-| **3. Quota of your subscription** | A message about quota or capacity, or the model greyed out. Free trial, student and sponsored subscriptions can have little or no quota for some models | Try the alternates below, lower the tokens-per-minute value, or request quota |
-
-**Regions that offer both lab models as Global Standard** (from Microsoft's region availability table):
-
-| Geography | Regions |
-| :--- | :--- |
-| Americas | Brazil South, Canada Central, Canada East, Central US, East US, **East US 2**, North Central US, South Central US, West US, West US 3 |
-| Europe | France Central, Germany West Central, Italy North, North Europe, Norway East, Poland Central, Spain Central, Sweden Central, Switzerland North, Switzerland West, UK South, West Europe |
-| Asia Pacific | Australia East, Japan East, Korea Central, Southeast Asia, **South India** |
-| Middle East and Africa | South Africa North, UAE North |
-
-**Alternate chat models if `gpt-5.4-mini` will not deploy.** All are offered as Global Standard in the regions above (the two `luna` models are not in North Europe). Deploy one, then change `CHAT_DEPLOYMENT` in `.env` to its name; no other change is needed.
-
-| Model | Price (input / output per 1M tokens) | Note |
-| :--- | :--- | :--- |
-| `gpt-6-luna` | $0.10 / $0.50 | Cheapest. May need a quota request |
-| `gpt-5.4-nano` | $0.20 / $1.25 | Cheapest in the same family as the lab model |
-| `gpt-5.6-luna` | $0.20 / $1.20 | May need a quota request |
-| `gpt-5-mini` | See pricing page | The model Microsoft's own quickstart uses. Not in Canada Central, North Europe or Switzerland West |
-
-The live source of truth for your own subscription is the CLI block below (`az cognitiveservices model list`), or the list the portal shows you under **Deploy a base model**. Full table: [Region availability for Foundry Models sold by Azure](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability).
-
-### Check both deployments
+### Lab 2.3: Check both deployments
 
 **Build** → **Models** lists your deployments. Both should show **Succeeded**. Select a deployment to see its endpoint details and keys, change its settings, or delete it.
 
@@ -812,6 +805,36 @@ az cognitiveservices account deployment show \
 If a command fails with `DeploymentModelNotSupported`, that model, version or SKU is not offered in your region. Use the output of the first command to pick a combination that is.
 
 </details>
+
+### If the model is not listed or cannot be deployed
+
+Start on the model page itself: on the right side, under **Availability**, select **View availability** to see the regions and deployment types this model is offered in. Then work through these three checks in order.
+
+| Check | What to look at | Fix |
+| :--- | :--- | :--- |
+| **1. Region of your Foundry resource** | Azure portal → your Foundry resource → **Overview** → **Location**. Not every Azure region hosts these models. **Central India is not on the list; South India is.** | The region of a resource cannot be changed. Create a new Foundry resource in a supported region (Lab 1) |
+| **2. Deployment type** | In **Deploy** → **Custom settings**, look at **Deployment type**. `gpt-5.4-mini` is offered as **Global Standard** and **Data Zone Standard** only. It is **not** offered as regional **Standard** in any region | Choose **Global Standard** |
+| **3. Quota of your subscription** | A message about quota or capacity, or the model greyed out. Free trial, student and sponsored subscriptions can have little or no quota for some models | Try the alternates below, lower the tokens-per-minute value, or request quota |
+
+**Regions that offer both lab models as Global Standard** (from Microsoft's region availability table):
+
+| Geography | Regions |
+| :--- | :--- |
+| Americas | Brazil South, Canada Central, Canada East, Central US, East US, **East US 2**, North Central US, South Central US, West US, West US 3 |
+| Europe | France Central, Germany West Central, Italy North, North Europe, Norway East, Poland Central, Spain Central, Sweden Central, Switzerland North, Switzerland West, UK South, West Europe |
+| Asia Pacific | Australia East, Japan East, Korea Central, Southeast Asia, **South India** |
+| Middle East and Africa | South Africa North, UAE North |
+
+**Alternate chat models if `gpt-5.4-mini` will not deploy.** All are offered as Global Standard in the regions above (the two `luna` models are not in North Europe). Deploy one, then change `CHAT_DEPLOYMENT` in `.env` to its name; no other change is needed.
+
+| Model | Price (input / output per 1M tokens) | Note |
+| :--- | :--- | :--- |
+| `gpt-6-luna` | $0.10 / $0.50 | Cheapest. May need a quota request |
+| `gpt-5.4-nano` | $0.20 / $1.25 | Cheapest in the same family as the lab model |
+| `gpt-5.6-luna` | $0.20 / $1.20 | May need a quota request |
+| `gpt-5-mini` | See pricing page | The model Microsoft's own quickstart uses. Not in Canada Central, North Europe or Switzerland West |
+
+The live source of truth for your own subscription is the CLI block in Lab 2.3 (`az cognitiveservices model list`), or the list the portal shows you under **Deploy a base model**. Full table: [Region availability for Foundry Models sold by Azure](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability).
 
 ---
 
@@ -978,12 +1001,35 @@ In this output `Deprecating` means deprecated (still works) and `Deprecated` mea
 
 [⬆ Back to Lab Index](#lab-index)
 
+**Where this runs:** entirely in the browser. No code and nothing to install.
+
+**The sub-labs:**
+
+| Sub-lab | What you do |
+| :--- | :--- |
+| **3.1** | Open the playground and chat with your model |
+| **3.2** | Change one setting at a time and see its effect |
+| **3.3** | Get the ready-made code for your deployment |
+
+### Lab 3.1: Open the playground and chat
+
 1. In the **Foundry portal** select **Build** → **Models**.
 2. Select the **gpt-5.4-mini** deployment. The chat playground opens.
 3. Put a persona in the instructions box, for example: `You are an expert AI tutor. Answer in under 120 words.`
 4. Type a prompt and send it.
-5. Change one setting at a time and resend to see its effect.
-6. Select the **Code** tab to get a ready-made Python sample with your endpoint and deployment name already filled in. Lab 4 shows how to turn it into your own script.
+
+**Expected result:** an answer in the persona you set, within the length you asked for.
+
+### Lab 3.2: Change one setting at a time
+
+1. Change **one** setting in the settings panel, using the parameter reference below as a guide.
+2. Send the same prompt again and compare the two answers.
+3. Put the setting back, then try the next one. Changing one thing at a time is the only way to see what each setting does.
+
+### Lab 3.3: Get the code
+
+1. Select the **Code** tab to get a ready-made Python sample with your endpoint and deployment name already filled in.
+2. Lab 4 shows how to turn it into your own script.
 
 ### Parameter reference
 
@@ -1195,7 +1241,7 @@ So the part you never write yourself is the connection (client, endpoint, deploy
 
 **File:** `lab4.1-chat_app_azure_code.py`. **Goal:** prove the connection works, using the code Azure gives you.
 
-**1. See what the portal gives you.** In Lab 3 step 6, the **Code** tab shows a sample like this:
+**1. See what the portal gives you.** In Lab 3.3, the **Code** tab shows a sample like this:
 
 ```python
 from openai import OpenAI
@@ -1510,13 +1556,40 @@ curl -X POST "https://foundry-genai-lab-<yourname>.services.ai.azure.com/openai/
 
 [⬆ Back to Lab Index](#lab-index)
 
-An embedding turns text into a vector. Two texts with close meaning give vectors that point in nearly the same direction, which cosine similarity measures (1.0 is identical direction, near 0 is unrelated).
+**The idea in plain words.** An embedding model does not answer questions. It turns a piece of text into a long list of numbers, called a vector, that represents the **meaning** of the text. Think of the numbers as a location on a map of meaning: texts that mean similar things land close together, and unrelated texts land far apart. This is what lets a search find "cloud safety" when you typed "Azure security", even though the words differ.
 
-```bash
-pip install numpy
+**Where this runs:** on your laptop, in the same folder and with the same `.env` as Lab 4. It uses the `EMBEDDING_DEPLOYMENT` value.
+
+**The sub-labs:**
+
+| Sub-lab | What you do |
+| :--- | :--- |
+| **5.1** | Install NumPy |
+| **5.2** | Create the script |
+| **5.3** | Run it and read the scores |
+| **5.4** | Understand the syntax, line by line |
+| **5.5** | Try your own sentences |
+
+### Lab 5.1: Install NumPy
+
+NumPy is a library for doing maths on lists of numbers. Add it to `requirements.txt`:
+
+```
+openai
+python-dotenv
+numpy
 ```
 
-### `embeddings_demo.py`
+Then install, using the command that matches your environment (Lab 4, Setup 3):
+
+```bash
+pip install -r requirements.txt       # standard environment
+uv pip install -r requirements.txt    # uv environment
+```
+
+### Lab 5.2: Create the script
+
+Create a file named `lab5.2-embeddings_demo.py`:
 
 ```python
 import os
@@ -1549,7 +1622,102 @@ print(f"Doc 1 vs Doc 2 (same topic): {cosine(vectors[0], vectors[1]):.4f}")
 print(f"Doc 1 vs Doc 3 (unrelated):  {cosine(vectors[0], vectors[2]):.4f}")
 ```
 
-Expected: 1,536 dimensions, and a clearly higher score for the first pair.
+### Lab 5.3: Run it
+
+```bash
+python lab5.2-embeddings_demo.py
+```
+
+**Expected result:** three lines. The dimension count is 1,536, and the first score is clearly higher than the second. The exact scores vary, but the gap between them is the point.
+
+```
+Dimensions: 1536
+Doc 1 vs Doc 2 (same topic): 0.6...
+Doc 1 vs Doc 3 (unrelated):  0.0...
+```
+
+### Lab 5.4: Understand the syntax, line by line
+
+**The API call**
+
+| Code | What it means |
+| :--- | :--- |
+| `client.embeddings.create(...)` | Calls the embeddings API. In Lab 4 the call was `client.responses.create(...)`, which returns text. This one returns numbers |
+| `model=os.environ["EMBEDDING_DEPLOYMENT"]` | The name of your **embedding** deployment. A chat deployment such as `gpt-5.4-mini` does not work here |
+| `input=docs` | The text to embed. It can be one string, or a list of strings as here. A list is embedded in a single call, which is faster and cheaper than one call per text |
+
+**What comes back**
+
+| Code | What it means |
+| :--- | :--- |
+| `result` | The whole response object |
+| `result.data` | A list with one entry per input text, in the same order as `docs` |
+| `result.data[0].embedding` | The vector for the first text: a plain Python list of 1,536 decimal numbers |
+| `result.usage.total_tokens` | How many tokens you were billed for. Not printed by this script; add `print(result.usage.total_tokens)` to see it |
+
+**Turning the result into vectors**
+
+```python
+vectors = [np.array(item.embedding) for item in result.data]
+```
+
+This one line is a *list comprehension*. It is the short form of this loop:
+
+```python
+vectors = []
+for item in result.data:                        # go through each returned entry
+    vectors.append(np.array(item.embedding))    # take its list of numbers and store it
+```
+
+| Code | What it means |
+| :--- | :--- |
+| `for item in result.data` | Go through the returned entries one at a time |
+| `item.embedding` | The list of 1,536 numbers for that entry |
+| `np.array(...)` | Converts the plain list into a NumPy array, so maths can be done on all the numbers at once |
+| `vectors` | Ends up as a list of three arrays: `vectors[0]` is Doc 1, `vectors[1]` is Doc 2, `vectors[2]` is Doc 3. Python counts from 0 |
+
+**The similarity function**
+
+```python
+def cosine(a, b):
+    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+```
+
+| Code | What it means |
+| :--- | :--- |
+| `def cosine(a, b):` | Defines a function named `cosine` that takes two vectors |
+| `np.dot(a, b)` | The dot product: multiply the two vectors number by number, then add everything up. A large result means the vectors point the same way |
+| `np.linalg.norm(a)` | The length of vector `a` |
+| `... / (norm(a) * norm(b))` | Divide by both lengths, so that only the **direction** counts and not the size |
+| `float(...)` | Converts NumPy's number type into an ordinary Python number |
+
+In plain words: imagine each vector as an arrow. Cosine similarity measures the angle between two arrows.
+
+| Score | Meaning |
+| :--- | :--- |
+| Close to **1.0** | The arrows point the same way: the texts mean nearly the same thing |
+| Around **0.3 to 0.7** | Related topics |
+| Close to **0** | Unrelated |
+
+**The print lines**
+
+| Code | What it means |
+| :--- | :--- |
+| `f"...{value}..."` | An f-string: whatever is inside `{}` is worked out and placed into the text |
+| `len(vectors[0])` | How many numbers are in the first vector, which is the model's dimension count |
+| `cosine(vectors[0], vectors[1])` | Compares Doc 1 with Doc 2 |
+| `:.4f` | Format the number with 4 digits after the decimal point |
+
+### Lab 5.5: Try it yourself
+
+| Change | What to notice |
+| :--- | :--- |
+| Replace the third sentence with another one about cloud security | Its score against Doc 1 jumps up |
+| Add a fourth sentence in another language with the same meaning as Doc 1 | Still a high score. Embeddings capture meaning, not the words |
+| Compare a document with itself: `cosine(vectors[0], vectors[0])` | Exactly `1.0000` |
+| Set `EMBEDDING_DEPLOYMENT` to a `text-embedding-3-large` deployment | `Dimensions` becomes 3,072 |
+
+**How this connects to RAG (Lab 7).** A search index stores one vector per chunk of your documents. A user's question is embedded the same way, and the chunks whose vectors score highest against it are the ones handed to the chat model. Azure AI Search does at scale what this script does for three sentences.
 
 ---
 
@@ -1840,21 +2008,32 @@ The **Import data** wizard in Azure AI Search builds the whole ingestion side fo
 
 **Cost warning:** this lab needs Azure AI Search on the **Basic** tier or higher (required for managed identity), which is billed per hour whether you use it or not. Delete it when you finish (Lab 10).
 
-### Step 1: Storage account and sample documents
+**The sub-labs:**
+
+| Sub-lab | What you do | Where |
+| :--- | :--- | :--- |
+| **7.1** | Create a storage account and upload sample PDFs | Azure portal |
+| **7.2** | Create the Azure AI Search service | Azure portal |
+| **7.3** | Assign the roles that let the services talk to each other | Azure portal |
+| **7.4** | Run the Import data wizard to chunk, embed and index the PDFs | Azure portal |
+| **7.5** | Test the index with a search query | Azure portal |
+| **7.6** | Ask questions about your documents from Python | Your laptop |
+
+### Lab 7.1: Storage account and sample documents
 
 1. **Azure portal** → **Create a resource** → **Storage account** → **Create**.
 2. Resource group `rg-genai-lab`, a unique name, region `East US 2`, performance **Standard**. **Review + create** → **Create**.
 3. Open the storage account → **Data storage** → **Containers** → **+ Container** → name `docs` → **Create**.
 4. Open `docs` → **Upload** → add a few PDFs. Microsoft's sample set: [health-plan PDFs](https://github.com/Azure-Samples/azure-search-sample-data/tree/main/health-plan).
 
-### Step 2: Azure AI Search service
+### Lab 7.2: Azure AI Search service
 
 1. **Azure portal** → **Create a resource** → **Azure AI Search** → **Create**.
 2. Resource group `rg-genai-lab`, a unique service name, region `East US 2`, **Pricing tier: Basic**. **Review + create** → **Create**.
 3. Open the search service → **Settings** → **Keys** → set API access control to **Role-based access control** (or **Both**).
 4. **Settings** → **Identity** → **System assigned** → **On** → **Save**.
 
-### Step 3: Role assignments
+### Lab 7.3: Role assignments
 
 All of these use **Access control (IAM)** → **+ Add** → **Add role assignment**, exactly as in Lab 6.1.
 
@@ -1868,7 +2047,7 @@ All of these use **Access control (IAM)** → **+ Add** → **Add role assignmen
 
 For the last two, choose **Managed identity** on the **Members** tab and pick your search service.
 
-### Step 4: Run the Import data wizard
+### Lab 7.4: Run the Import data wizard
 
 1. Open the search service → **Overview** → **Import data**.
 2. Data source: **Azure Blob Storage**. Scenario: **RAG**.
@@ -1880,13 +2059,13 @@ For the last two, choose **Managed identity** on the **Members** tab and pick yo
 
 The wizard creates a data source, an index, a skillset and an indexer. It chunks text into pages of 2,000 characters with 500 characters of overlap. Index fields include `chunk` (the text), `title` (the file name) and `text_vector` (the embedding).
 
-### Step 5: Test the index in the portal
+### Lab 7.5: Test the index in the portal
 
 1. Search service → **Search management** → **Indexes** → open your index (check the exact name here; you need it for the code).
 2. In **Search explorer**, type a question about your documents, such as `Which plan has the lowest deductible?`, and select **Search**.
 3. To read results easily, use **Query options** → **Hide vector values in search results**.
 
-### Step 6: Ask questions from Python
+### Lab 7.6: Ask questions from Python
 
 ```bash
 pip install azure-search-documents azure-identity
@@ -1896,7 +2075,7 @@ Add to `.env`:
 
 ```env
 SEARCH_ENDPOINT="https://<your-search-service>.search.windows.net"
-SEARCH_INDEX="<index name from Step 5>"
+SEARCH_INDEX="<index name from Lab 7.5>"
 ```
 
 `rag_app.py` (keyless for both services, so run `az login` first and complete Lab 6):
@@ -1971,7 +2150,15 @@ By default the endpoint is reachable from the internet (protected by key or Entr
 +----------------------+                                   +-------------------------+
 ```
 
-### Step 1: Confirm the network from Lab 0
+**The sub-labs:**
+
+| Sub-lab | What you do | Where |
+| :--- | :--- | :--- |
+| **8.1** | Confirm the VNet and subnets from Lab 0 exist | Azure portal |
+| **8.2** | Restrict access: selected networks (Option 1) **or** private endpoint only (Option 2) | Azure portal |
+| **8.3** | Prove the public path is closed (optional) | Your laptop, and a test VM |
+
+### Lab 8.1: Confirm the network from Lab 0
 
 The VNet and subnets were created in [Lab 0](#lab-0-create-the-network-resource-group-vnet-and-subnets). If you skipped it, do it now.
 
@@ -1980,7 +2167,7 @@ The VNet and subnets were created in [Lab 0](#lab-0-create-the-network-resource-
 
 In this lab the resources you create go in the workload group `rg-genai-lab`, and they attach to subnets in the network group `rg-genai-network`. Only the private DNS zones are created in the network group.
 
-### Step 2: Choose how to restrict access
+### Lab 8.2: Restrict access (choose one option)
 
 #### Option 1: Allow only chosen networks or IPs
 
@@ -2037,7 +2224,7 @@ This creates the endpoint only. The portal steps above also create and link the 
 
 After this, calls from your laptop fail and calls from inside the VNet succeed, with no code change, because the same hostname now resolves to a private IP.
 
-### Step 3: Prove it (optional)
+### Lab 8.3: Prove it (optional)
 
 1. From your own machine run `python lab4.1-chat_app_azure_code.py`. It should now fail with a `403` or connection error.
 2. To see it work privately, create a small virtual machine in the resource group `rg-genai-lab`, and on its **Networking** tab choose `vnet-genai-lab` and subnet `snet-apps`. Then run `nslookup foundry-genai-lab-<yourname>.openai.azure.com` on it. The answer should be a `10.0.1.x` address.
@@ -2053,6 +2240,13 @@ Practice notes: do this lab last. With public access disabled you can no longer 
 [⬆ Back to Lab Index](#lab-index)
 
 Every deployment has a guardrail that checks the prompt going in and the answer coming out. A new deployment gets the Microsoft default guardrail (**Default.V2**), which you cannot edit.
+
+**The sub-labs:**
+
+| Sub-lab | What you do | Where |
+| :--- | :--- | :--- |
+| **9.1** | Create your own guardrail and assign it to the model | Foundry portal |
+| **9.2** | Test it in the playground | Foundry portal |
 
 ### What the default guardrail does
 
@@ -2070,7 +2264,7 @@ Optional controls you can add: **PII** detection and redaction, **groundedness**
 * **Prompt blocked:** the call fails with HTTP `400` and error code `content_filter`. Catch it and show a friendly message.
 * **Answer blocked:** the response comes back marked as filtered (in Chat Completions, `finish_reason` is `content_filter`). Do not show a half answer.
 
-### Create and assign your own guardrail
+### Lab 9.1: Create and assign your own guardrail
 
 Needs the **Foundry Account Owner** role.
 
@@ -2082,7 +2276,7 @@ Needs the **Foundry Account Owner** role.
 6. **Next** → **Add models** → tick `gpt-5.4-mini` → **Save**.
 7. **Next** → review, give it a name → **Create**.
 
-### Test it
+### Lab 9.2: Test the guardrail
 
 1. **Build** → **Guardrails** → select the row of your guardrail.
 2. In the side panel select **Try in Playground**.
@@ -2095,6 +2289,15 @@ Each intervention point adds roughly 50 to 100 ms of latency, so add only the co
 ## 14. Lab 10: Cost Control and Clean-Up
 
 [⬆ Back to Lab Index](#lab-index)
+
+**The sub-labs:**
+
+| Sub-lab | What you do | Where |
+| :--- | :--- | :--- |
+| **10.1** | Set a budget alert | Azure portal |
+| **10.2** | Watch usage and cost | Azure portal |
+| **10.3** | Delete everything, in the right order | Azure portal |
+| **10.4** | Purge soft-deleted Foundry resources to free their names | Azure CLI |
 
 ### What you pay for
 
@@ -2115,7 +2318,7 @@ Each intervention point adds roughly 50 to 100 ms of latency, so add only the co
 | **Cache answers** | Store answers to repeated questions in your own cache (for example Redis) |
 | **Provisioned throughput (PTU)** | Reserve capacity when traffic is high and steady |
 
-### Set a budget alert (Azure portal)
+### Lab 10.1: Set a budget alert
 
 1. Search the top bar for **Cost Management + Billing** → **Cost Management** → **Budgets**.
 2. Select **+ Add**. Set the **Scope** to the resource group `rg-genai-lab`. Almost all cost is here; the network group holds only the free VNet and the low-cost private DNS zones.
@@ -2124,11 +2327,11 @@ Each intervention point adds roughly 50 to 100 ms of latency, so add only the co
 
 A budget only sends alerts. It does not stop spending.
 
-### Watch usage
+### Lab 10.2: Watch usage
 
 Foundry resource → **Monitoring** → **Metrics** shows requests and tokens per deployment. **Cost Management** → **Cost analysis**, filtered to `rg-genai-lab`, shows the money.
 
-### Clean up everything
+### Lab 10.3: Clean up everything
 
 There are two resource groups. Follow this order.
 
@@ -2163,7 +2366,7 @@ az group exists --name rg-genai-network
 
 </details>
 
-### Purge soft-deleted Foundry resources
+### Lab 10.4: Purge soft-deleted Foundry resources
 
 Deleting a Foundry resource, or the resource group it was in, only soft-deletes it. The name stays reserved until you purge it, which is what causes `CustomDomainInUse` when you recreate a resource with the same name. Viewing and purging deleted resources needs the **Contributor** role at the subscription scope.
 
@@ -2223,6 +2426,13 @@ Step 3 purges **everything** in the list, not only the lab resource, and a purge
 
 The model only knows what the prompt tells it. A clear prompt is the cheapest way to get a better answer.
 
+**The sub-labs:**
+
+| Sub-lab | What you do | Where |
+| :--- | :--- | :--- |
+| **11.1** | Compare a vague prompt with a specific one | Foundry portal playground |
+| **11.2** | Teach the model a task with examples (few-shot) | Your laptop |
+
 ### Techniques
 
 | Technique | What to do | Example |
@@ -2237,7 +2447,7 @@ The model only knows what the prompt tells it. A clear prompt is the cheapest wa
 
 With reasoning models, do not add "think step by step". The model already reasons internally; raise or lower **reasoning effort** instead. Describe the goal and the constraints, and let the model plan.
 
-### Try it in the playground
+### Lab 11.1: Compare a vague and a specific prompt in the playground
 
 1. **Foundry portal** → **Build** → **Models** → select **gpt-5.4-mini**.
 2. Send this vague prompt: `Tell me about this review: The laptop is fast but the battery dies in two hours.`
@@ -2245,7 +2455,9 @@ With reasoning models, do not add "think step by step". The model already reason
 4. Compare the two answers. The second is short, predictable and easy for code to use.
 5. Move the fixed part (`Classify the sentiment...`) into the instructions box and send only the tagged review as the prompt. This is how an app is normally structured.
 
-### `prompt_few_shot.py`
+### Lab 11.2: Few-shot prompting in Python
+
+**File:** `lab11.2-prompt_few_shot.py`. **Goal:** classify a support ticket by showing the model two worked examples.
 
 Uses the same `.env` as Lab 4.
 
@@ -2281,6 +2493,14 @@ response = client.responses.create(
 print(response.output_text)   # expected: Account
 ```
 
+**Run it:**
+
+```bash
+python lab11.2-prompt_few_shot.py
+```
+
+**Expected result:** one word, `Account`.
+
 ---
 
 ## 16. Lab 12: Structured Outputs (JSON)
@@ -2289,7 +2509,9 @@ print(response.output_text)   # expected: Account
 
 A prompt can ask for JSON, but the model may still add extra words or miss a field. **Structured outputs** guarantee that the answer matches a JSON schema you supply, so your code can parse it safely.
 
-### `structured_output.py`
+### Lab 12.1: Extract fields into JSON
+
+**File:** `lab12.1-structured_output.py`. **Goal:** turn a free-text customer email into JSON your code can rely on. Uses the same `.env` as Lab 4.
 
 ```python
 import os
@@ -2331,6 +2553,14 @@ for issue in data["issues"]:
     print("-", issue)
 ```
 
+**Run it:**
+
+```bash
+python lab12.1-structured_output.py
+```
+
+**Expected result:** the customer name and a sentiment on one line, then each issue from the email on its own line.
+
 ### Schema rules in strict mode
 
 * Every property must be listed in `required`.
@@ -2358,7 +2588,9 @@ A model cannot look up live data or take actions on its own. With **function cal
 
 The model never runs anything itself. You stay in control of what gets executed.
 
-### `function_calling.py`
+### Lab 13.1: Let the model call your function
+
+**File:** `lab13.1-function_calling.py`. **Goal:** the model asks your Python function for an order status, then answers in plain language. Uses the same `.env` as Lab 4.
 
 ```python
 import os
@@ -2416,6 +2648,14 @@ final = client.responses.create(
 print(final.output_text)
 ```
 
+**Run it:**
+
+```bash
+python lab13.1-function_calling.py
+```
+
+**Expected result:** first a line showing what the model asked for, such as `Model asked for: get_order_status({'order_id': 'A123'})`, then a sentence saying the order has shipped and arrives Friday.
+
 ### Good practice
 
 * Write a clear `description` for the function and for each parameter. The model chooses from these words alone.
@@ -2445,7 +2685,17 @@ There is no routing. The Foundry portal lists only the projects the signed-in ac
 
 **You need:** Lab 1 and Lab 2 done, the **Owner** role on the resource (to assign roles), and permission to create users in your Microsoft Entra tenant (for example **User Administrator**).
 
-### Step 1: Create the two projects
+**The sub-labs:**
+
+| Sub-lab | What you do | Where |
+| :--- | :--- | :--- |
+| **14.1** | Create two projects in the same Foundry resource | Foundry portal |
+| **14.2** | Create two test users | Azure portal (Microsoft Entra ID) |
+| **14.3** | Give each user a role on their own project only | Foundry portal |
+| **14.4** | Sign in as each user and check what they can see | Private browser window |
+| **14.5** | Assign a role at the wrong scope and see the effect (optional) | Azure portal |
+
+### Lab 14.1: Create the two projects
 
 1. **Foundry portal** → select the current project name in the upper-left corner → **Create new project**.
 2. **Project name:** `chatapp`.
@@ -2469,7 +2719,7 @@ done
 
 </details>
 
-### Step 2: Create the two test users
+### Lab 14.2: Create the two test users
 
 1. **Azure portal** → search **Microsoft Entra ID** → **Users** → **New user** → **Create new user**.
 2. **User principal name:** `chat_user` (the domain after `@` is your tenant, for example `yourtenant.onmicrosoft.com`).
@@ -2498,7 +2748,7 @@ az ad user create \
 
 </details>
 
-### Step 3: Give each user a role on their own project only
+### Lab 14.3: Give each user a role on their own project only
 
 1. **Foundry portal** → open the project **chatapp**.
 2. Select **Manage** in the upper-right navigation → **Project details** in the left pane → **Users** tab.
@@ -2537,7 +2787,7 @@ az role assignment list --scope $TRANS_ID --role $FOUNDRY_USER --output table
 
 </details>
 
-### Step 4: Test as each user
+### Lab 14.4: Test as each user
 
 Role assignments can take a few minutes to apply. Use a private (incognito) browser window so your admin session does not interfere.
 
@@ -2550,7 +2800,7 @@ Role assignments can take a few minutes to apply. Use a private (incognito) brow
 | 5 | Close the window, open a new private window, sign in as `trans_user` | Only **transapp** is listed |
 | 6 | As admin, open the Azure portal → project `chatapp` → **Access control (IAM)** → **Check access** → search `trans_user` | No role assignments on this project |
 
-### Step 5: See what goes wrong with the wrong scope (optional)
+### Lab 14.5: See what goes wrong with the wrong scope (optional)
 
 1. As admin, **Azure portal** → Foundry resource → **Access control (IAM)** → **+ Add** → **Add role assignment** → **Foundry User** → member `chat_user` → **Review + assign**.
 2. Sign in again as `chat_user`. After a few minutes **both** projects are listed.
