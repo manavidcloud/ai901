@@ -1746,7 +1746,7 @@ In plain words: imagine each vector as an arrow. Cosine similarity measures the 
 | **6.2** | Sign in on your laptop and install one package | Terminal |
 | **6.3** | Call the model with no key | Python |
 | **6.4** | Prove that no key was used | Python and terminal |
-| **6.5** | Turn keys off completely (optional) | Azure portal |
+| **6.5** | Turn keys off completely (optional) | Azure CLI or PowerShell |
 
 ### Lab 6.1: Give yourself the role
 
@@ -1927,33 +1927,99 @@ Together the two checks show the script depends on **who you are**, not on a sec
 
 Do this only when you are ready: **every script that uses the key stops working**, including the Lab 4 and Lab 5 scripts and the later labs that reuse their client. To keep practising them, turn keys back on afterwards, or switch those scripts to the keyless client from Lab 6.3.
 
-1. **Azure portal** → Foundry resource → **Resource Management** → **Keys and Endpoint**.
-2. Disable key (local) authentication and save.
+**There is no switch for this in the Azure portal or the Foundry portal.** The **Keys and Endpoint** page only shows and regenerates keys. Microsoft documents three ways to turn key access off:
 
-<details>
-<summary>▶ Azure CLI: turn key authentication off, and back on</summary>
+| Way | Use it when |
+| :--- | :--- |
+| **A command**, for one resource | You are doing it by hand, as in this lab |
+| **Bicep, ARM or Terraform**, by setting the property `disableLocalAuth` to `true` | The resource is created as code |
+| **Azure Policy**: *Azure AI Services resources should have key access disabled (disable local authentication)* | You want it enforced for a whole subscription or resource group. This is the production choice |
+
+Each step below is shown in **Azure CLI** and in **PowerShell**. Use one of them, not both. Microsoft's article documents the PowerShell commands; the Azure CLI commands set the same `disableLocalAuth` property through the CLI's general-purpose update command.
+
+**1. Sign in and find the resource**
+
+Azure CLI:
 
 ```bash
+az login
+
 RESOURCE_ID=$(az cognitiveservices account show \
     --name foundry-genai-lab-<yourname> \
     --resource-group rg-genai-lab \
     --query id --output tsv)
+```
 
-# Off: only Entra ID sign-ins are accepted
+PowerShell:
+
+```powershell
+Connect-AzAccount
+```
+
+**2. Turn key access off**
+
+Azure CLI:
+
+```bash
 az resource update --ids $RESOURCE_ID --set properties.disableLocalAuth=true
+```
 
-# On again: keys work as before
+PowerShell:
+
+```powershell
+Set-AzCognitiveServicesAccount `
+    -ResourceGroupName "rg-genai-lab" `
+    -Name "foundry-genai-lab-<yourname>" `
+    -DisableLocalAuth $true
+```
+
+If PowerShell does not recognise `-DisableLocalAuth`, update the module with `Update-Module -Name Az.CognitiveServices`.
+
+**3. Check the setting**
+
+Azure CLI:
+
+```bash
+az resource show --ids $RESOURCE_ID --query properties.disableLocalAuth
+```
+
+PowerShell:
+
+```powershell
+(Get-AzCognitiveServicesAccount `
+    -ResourceGroupName "rg-genai-lab" `
+    -Name "foundry-genai-lab-<yourname>").DisableLocalAuth
+```
+
+Both print `true` when key access is disabled.
+
+**4. Wait, then test.** The change does **not** take effect at once. It usually applies within a few minutes, but can take up to several hours. Until then the old key may still work.
+
+| Script | Result once the change has applied |
+| :--- | :--- |
+| `python lab6.3-chat_keyless.py` | Works |
+| `python lab4.1-chat_app_azure_code.py` | Fails with `401` and the message `Access denied due to invalid subscription key or wrong API endpoint`, even though the key is correct |
+
+**5. Turn key access back on** to continue the other labs
+
+Azure CLI:
+
+```bash
 az resource update --ids $RESOURCE_ID --set properties.disableLocalAuth=false
 ```
 
-</details>
+PowerShell:
 
-**Expected result with keys off:**
+```powershell
+Set-AzCognitiveServicesAccount `
+    -ResourceGroupName "rg-genai-lab" `
+    -Name "foundry-genai-lab-<yourname>" `
+    -DisableLocalAuth $false
+```
 
-| Script | Result |
-| :--- | :--- |
-| `python lab6.3-chat_keyless.py` | Works |
-| `python lab4.1-chat_app_azure_code.py` | Fails with `401` or `403`, even though the key is correct |
+This is also delayed by a few minutes, and sometimes longer.
+
+Source: [Disable local authentication in Foundry Tools](https://learn.microsoft.com/en-us/azure/ai-services/disable-local-auth).
 
 ### How the same code runs on Azure
 
@@ -2021,10 +2087,32 @@ The **Import data** wizard in Azure AI Search builds the whole ingestion side fo
 
 ### Lab 7.1: Storage account and sample documents
 
+**Goal:** a storage account with a container that holds the PDFs the search index will read.
+
+**1. Create the storage account**
+
 1. **Azure portal** → **Create a resource** → **Storage account** → **Create**.
-2. Resource group `rg-genai-lab`, a unique name, region `East US 2`, performance **Standard**. **Review + create** → **Create**.
-3. Open the storage account → **Data storage** → **Containers** → **+ Container** → name `docs` → **Create**.
-4. Open `docs` → **Upload** → add a few PDFs. Microsoft's sample set: [health-plan PDFs](https://github.com/Azure-Samples/azure-search-sample-data/tree/main/health-plan).
+2. Fill in the **Basics** tab:
+
+| Field | Value | Why |
+| :--- | :--- | :--- |
+| **Subscription** | Your subscription | |
+| **Resource group** | `rg-genai-lab` | The storage here exists only for this app |
+| **Storage account name** | A globally unique name, 3 to 24 characters, lowercase letters and numbers only, for example `stgenailab<yourname>` | No hyphens or capitals are allowed |
+| **Region** | `East US 2` | Same region as the rest of the lab |
+| **Primary service** | **Azure Blob Storage or Azure Data Lake Storage Gen 2** | The PDFs are stored as blobs. The other choices (Azure Files, tables and queues) are for file shares and messaging |
+| **Performance** | **Standard** | Required by the Import data wizard. Premium is not supported for this |
+| **Redundancy** | **Locally-redundant storage (LRS)** | The cheapest option, and enough for practice data |
+
+3. Leave the other tabs on their defaults. In particular, on the **Advanced** tab leave **Enable hierarchical namespace** unticked: that keeps it plain Blob Storage, which is what this lab uses.
+4. **Review + create** → **Create**, then **Go to resource**.
+
+**2. Create the container and upload documents**
+
+1. In the storage account select **Data storage** → **Containers** → **+ Container** → name `docs` → **Create**.
+2. Open `docs` → **Upload** → add a few PDFs. Microsoft's sample set: [health-plan PDFs](https://github.com/Azure-Samples/azure-search-sample-data/tree/main/health-plan).
+
+**Expected result:** the `docs` container lists your PDFs.
 
 ### Lab 7.2: Azure AI Search service
 
