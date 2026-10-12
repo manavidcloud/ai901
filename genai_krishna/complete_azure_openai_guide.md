@@ -2116,10 +2116,44 @@ The **Import data** wizard in Azure AI Search builds the whole ingestion side fo
 
 ### Lab 7.2: Azure AI Search service
 
-1. **Azure portal** → **Create a resource** → **Azure AI Search** → **Create**.
-2. Resource group `rg-genai-lab`, a unique service name, region `East US 2`, **Pricing tier: Basic**. **Review + create** → **Create**.
-3. Open the search service → **Settings** → **Keys** → set API access control to **Role-based access control** (or **Both**).
-4. **Settings** → **Identity** → **System assigned** → **On** → **Save**.
+**Goal:** a search service that can hold the index, with role-based access and its own managed identity switched on.
+
+**1. Open the create page.** Either route leads to the same form:
+
+| Route | Clicks |
+| :--- | :--- |
+| **From Foundry in the Azure portal** | **Azure portal** → search **Foundry** and open it → in the left menu select **AI Search** (the second entry) → **+ Create** |
+| **From Create a resource** | **Azure portal** → **Create a resource** → search **Azure AI Search** → **Create** |
+
+The first route is handy because the same left menu lists your Foundry resource and your search services side by side.
+
+**2. Fill in the Basics tab:**
+
+| Field | Value | Why |
+| :--- | :--- | :--- |
+| **Subscription** | Your subscription | |
+| **Resource group** | `rg-genai-lab` | Same group as the Foundry resource |
+| **Service name** | A globally unique name, lowercase letters, numbers and hyphens, for example `srch-genai-lab-<yourname>` | It becomes part of the URL `https://<name>.search.windows.net` |
+| **Location** | `East US 2`. If the form does not offer it or rejects it, use **East US**, then **West US 3** or **Sweden Central** | Same region as the rest of the lab when possible. A region can be closed to new search services while it is short of capacity. The search service works from a different region than the Foundry resource and storage account; the cost is a little extra latency. Pick plain **East US 2**, not **East US 2 EUAP**: that is a separate early-access region where the search service is not offered, and choosing it fails with `LocationNotAvailableForResourceType` |
+| **Pricing tier** | **Basic** (use **Change Pricing Tier** if another tier is preselected) | The lowest tier that supports the managed identity this lab uses. It is billed per hour, so delete it when you finish |
+
+**3. Set the remaining tabs:**
+
+| Tab | Setting | Choose | Why |
+| :--- | :--- | :--- | :--- |
+| **Scale** | Replicas and partitions | Leave at **1** and **1** | The smallest and cheapest size. More replicas or partitions multiply the hourly price |
+| **Networking** | **Endpoint connectivity (data)** | **Public** | The Import data wizard in Lab 7.4 only works when the search service, the storage account and the Foundry resource are all reachable publicly. With **Private** the wizard fails |
+| **Tags** | | Leave empty | Optional labels for cost and ownership |
+
+"Public" here means the endpoint can be reached from the internet, not that it is open to everyone: a caller still needs a valid role or key. In production you would choose **Private** and add a private endpoint in `snet-private-endpoints`, the same way Lab 8 does for the Foundry resource. Microsoft's guidance is to run the wizard first and switch to private afterwards.
+
+**Review + create** → **Create**, then **Go to resource**.
+
+**4. Switch on role-based access:** in the search service select **Settings** → **Keys** → set API access control to **Role-based access control** (or **Both**).
+
+**5. Switch on the managed identity:** **Settings** → **Identity** → **System assigned** → **On** → **Save**.
+
+**Expected result:** the **Overview** page shows the service as running, with a URL ending in `.search.windows.net`. Copy that URL; Lab 7.6 uses it as `SEARCH_ENDPOINT`.
 
 ### Lab 7.3: Role assignments
 
