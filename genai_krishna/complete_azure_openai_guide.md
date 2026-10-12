@@ -2157,7 +2157,9 @@ The first route is handy because the same left menu lists your Foundry resource 
 
 ### Lab 7.3: Role assignments
 
-All of these use **Access control (IAM)** → **+ Add** → **Add role assignment**, exactly as in Lab 6.1.
+**Goal:** five role assignments on three resources. Do them in this order.
+
+All of these use **Access control (IAM)** → **+ Add** → **Add role assignment**, exactly as in Lab 6.1. The summary:
 
 | On this resource | Assign this role | To |
 | :--- | :--- | :--- |
@@ -2167,7 +2169,57 @@ All of these use **Access control (IAM)** → **+ Add** → **Add role assignmen
 | Storage account | **Storage Blob Data Reader** | The search service's managed identity |
 | Foundry resource | **Foundry Project Manager** | The search service's managed identity |
 
-For the last two, choose **Managed identity** on the **Members** tab and pick your search service.
+The click-by-click steps for each row follow.
+
+**Part A: On the search service, give yourself three roles**
+
+1. **Azure portal** → open your **search service**.
+2. Left menu → **Access control (IAM)** → **+ Add** → **Add role assignment**.
+3. **Role** tab: search `Search Service Contributor` → select it → **Next**.
+4. **Members** tab: keep **User, group, or service principal** → **+ Select members** → pick **your own account** → **Select**.
+5. **Review + assign** → **Review + assign**.
+6. Repeat steps 2 to 5 with the role `Search Index Data Contributor`.
+7. Repeat steps 2 to 5 with the role `Search Index Data Reader`.
+
+**Part B: On the storage account, give the search service one role**
+
+1. **Azure portal** → open your **storage account**.
+2. Left menu → **Access control (IAM)** → **+ Add** → **Add role assignment**.
+3. **Role** tab: search `Storage Blob Data Reader` → select it → **Next**.
+4. **Members** tab: choose **Managed identity** → **+ Select members**.
+5. In the **Managed identity** dropdown choose **Search service** → pick **your search service** → **Select**.
+6. **Review + assign** → **Review + assign**.
+
+**Part C: On the Foundry resource, give the search service one role**
+
+1. **Azure portal** → open your **Foundry resource**.
+2. Left menu → **Access control (IAM)** → **+ Add** → **Add role assignment**.
+3. **Role** tab: search `Foundry Project Manager` → select it → **Next**. It may appear under its earlier name, `Azure AI Project Manager`.
+4. **Members** tab: choose **Managed identity** → **+ Select members**.
+5. In the **Managed identity** dropdown choose **Search service** → pick **your search service** → **Select**.
+6. **Review + assign** → **Review + assign**.
+
+**Part D: Check**
+
+On each of the three resources open **Access control (IAM)** → **Role assignments** tab and confirm:
+
+| Resource | You should see |
+| :--- | :--- |
+| Search service | Your account with **Search Service Contributor**, **Search Index Data Contributor** and **Search Index Data Reader** |
+| Storage account | Your search service with **Storage Blob Data Reader** |
+| Foundry resource | Your search service with **Foundry Project Manager** |
+
+Wait a few minutes before Lab 7.4. New role assignments take time to apply.
+
+What each role is for:
+
+| Role | Lets |
+| :--- | :--- |
+| Search Service Contributor | You create the index, indexer and other objects (the wizard does this as you) |
+| Search Index Data Contributor | You load documents into the index |
+| Search Index Data Reader | You query the index (Lab 7.5 and Lab 7.6) |
+| Storage Blob Data Reader | The search service read the PDFs in the `docs` container |
+| Foundry Project Manager | The search service call your embedding model |
 
 ### Lab 7.4: Run the Import data wizard
 
