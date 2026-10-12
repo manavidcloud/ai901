@@ -1557,15 +1557,43 @@ Expected: 1,536 dimensions, and a clearly higher score for the first pair.
 
 [⬆ Back to Lab Index](#lab-index)
 
-An API key is a shared password: anyone who copies it can call your model and you cannot tell who did. With Entra ID, each user or app signs in as itself and Azure RBAC decides what it may do. Use keys for a quick test and Entra ID for everything else.
+**The idea in plain words.** An API key is like one shared office key: anyone who gets a copy can walk in, and the door cannot tell who it was. Entra ID is like a personal ID badge: each person or app signs in as itself, the door checks what that badge is allowed to do, and every entry is recorded under a name. Use a key for a quick test and Entra ID for everything else.
 
-### Step 1: Give yourself the role (Azure portal)
+| | API key (Labs 4 and 5) | Entra ID, keyless (this lab) |
+| :--- | :--- | :--- |
+| **What proves who you are** | A secret string in `.env` | Your own sign-in, or an app's managed identity |
+| **If it leaks** | Anyone can call your model until you regenerate it | Nothing to leak. There is no stored secret |
+| **Who made a call** | Unknown. Everyone shares the key | Recorded per user or per app |
+| **What each caller may do** | Everything the key allows | Only what their role allows |
+
+**Where this runs:** on your laptop, in the same folder and with the same `.env` as Lab 4.
+
+**What you need first:** Lab 4 working, the Azure CLI installed, and the **Owner** role on the Foundry resource so you can assign a role.
+
+**The sub-labs:**
+
+| Sub-lab | What you do | Where |
+| :--- | :--- | :--- |
+| **6.1** | Give your account a role that allows calling the model | Azure portal |
+| **6.2** | Sign in on your laptop and install one package | Terminal |
+| **6.3** | Call the model with no key | Python |
+| **6.4** | Prove that no key was used | Python and terminal |
+| **6.5** | Turn keys off completely (optional) | Azure portal |
+
+### Lab 6.1: Give yourself the role
+
+**Goal:** your account is allowed to call models on this Foundry resource.
+
+Being Owner is not enough. Owner lets you manage the resource, not use it. Calling a model needs a role with development permissions.
 
 1. Open the Foundry resource in the **Azure portal**.
-2. Select **Access control (IAM)** → **+ Add** → **Add role assignment**.
-3. On the **Role** tab search for **Cognitive Services OpenAI User**, select it, then **Next**.
-4. On the **Members** tab keep **User, group, or service principal**, choose **+ Select members**, pick your own account, then **Select**.
-5. Select **Review + assign** twice. Role changes can take a few minutes to apply.
+2. Select **Access control (IAM)** → **Check access** → search your own account. If **Foundry User** is already listed, skip to Lab 6.2. The portal usually adds it for you when you create the resource.
+3. Select **+ Add** → **Add role assignment**.
+4. On the **Role** tab search for **Foundry User**, select it, then **Next**. You may see it under its earlier name, **Azure AI User**.
+5. On the **Members** tab keep **User, group, or service principal**, choose **+ Select members**, pick your own account, then **Select**.
+6. Select **Review + assign** twice.
+
+**Expected result:** **Check access** now shows **Foundry User** for your account. A new role can take a few minutes to apply.
 
 <details>
 <summary>▶ Azure CLI: assign the role</summary>
@@ -1576,22 +1604,72 @@ RESOURCE_ID=$(az cognitiveservices account show \
     --resource-group rg-genai-lab \
     --query id --output tsv)
 
+# Foundry User, by role ID (the display name is being renamed, the ID is stable)
 az role assignment create \
-    --role "Cognitive Services OpenAI User" \
+    --role "53ca6127-db72-4b80-b1b0-d745d6d5456d" \
     --assignee "you@yourdomain.com" \
+    --assignee-principal-type User \
     --scope $RESOURCE_ID
 ```
 
 </details>
 
-### Step 2: Sign in locally
+Microsoft's guidance for Foundry is the **Foundry User** role. Older Azure OpenAI articles name **Cognitive Services OpenAI User** for the same purpose; you may meet it there.
+
+### Lab 6.2: Sign in on your laptop
+
+**Goal:** your terminal holds a sign-in that Python can use.
+
+**1. Sign in with the Azure CLI:**
 
 ```bash
 az login
-pip install azure-identity
 ```
 
-### Step 3: `chat_keyless.py`
+A browser window opens. Sign in with the same account you gave the role to.
+
+**2. Confirm who you are signed in as:**
+
+```bash
+az account show --query user.name --output tsv
+```
+
+**Expected result:** your own account name.
+
+**3. Install the identity package.** Add it to `requirements.txt`:
+
+```
+openai
+python-dotenv
+numpy
+azure-identity
+```
+
+Then install with the command that matches your environment (Lab 4, Setup 3):
+
+```bash
+pip install -r requirements.txt       # standard environment
+uv pip install -r requirements.txt    # uv environment
+```
+
+| Package | What it does |
+| :--- | :--- |
+| `azure-identity` | Finds your sign-in, gets an access token from Entra ID, and renews it before it expires |
+
+### Lab 6.3: Call the model with no key
+
+**File:** `lab6.3-chat_keyless.py`. **Goal:** the same call as Lab 4.1, with a sign-in in place of the key.
+
+Only the client changes. Compare the two:
+
+| | Lab 4 (key) | Lab 6 (keyless) |
+| :--- | :--- | :--- |
+| Extra import | None | `from azure.identity import DefaultAzureCredential, get_bearer_token_provider` |
+| `api_key=` | `os.environ["AZURE_OPENAI_API_KEY"]` | `token_provider` |
+| Reads the key from `.env` | Yes | **No** |
+| The `responses.create` call | Unchanged | Unchanged |
+
+**1. Create `lab6.3-chat_keyless.py`:**
 
 ```python
 import os
@@ -1618,20 +1696,127 @@ response = client.responses.create(
 print(response.output_text)
 ```
 
-`DefaultAzureCredential` uses your `az login` on a laptop and a **managed identity** when the same code runs on Azure (App Service, Container Apps, AKS, Functions). For an app on Azure, turn on its managed identity under **Identity** → **System assigned** → **On**, then repeat Step 1 with **Managed identity** as the member type.
+**2. Run it:**
+
+```bash
+python lab6.3-chat_keyless.py
+```
+
+**Expected result:** a one-line greeting.
+
+**The syntax, piece by piece:**
+
+| Code | What it means |
+| :--- | :--- |
+| `DefaultAzureCredential()` | "Find a sign-in for me." On your laptop it finds your `az login`. On Azure it finds the app's managed identity. The same code works in both places |
+| `"https://ai.azure.com/.default"` | The scope: which service the token is for. This value is fixed for Foundry; do not change it |
+| `get_bearer_token_provider(...)` | Wraps the two into a function that returns a fresh token each time it is asked, so a long-running app never holds an expired one |
+| `api_key=token_provider` | The client calls that function on every request and sends the token where the key used to go |
+
+**If it fails:**
+
+| Message | Cause | Fix |
+| :--- | :--- | :--- |
+| `401` or `403`, mentioning permission or `PermissionDenied` | The role is missing or has not applied yet | Recheck Lab 6.1, wait a few minutes, run again |
+| `DefaultAzureCredential failed to retrieve a token` | Not signed in, or signed in to another tenant | Run `az login` again |
+| `ModuleNotFoundError: No module named 'azure'` | `azure-identity` is not installed in the active environment | Repeat step 3 of Lab 6.2 |
+
+### Lab 6.4: Prove that no key was used
+
+**Goal:** remove any doubt that the script works on your sign-in alone.
+
+**Check A: take the key away.** Open `.env` and put a `#` in front of the key line:
+
+```env
+# AZURE_OPENAI_API_KEY="..."
+```
+
+Run both scripts:
+
+| Script | Result | Why |
+| :--- | :--- | :--- |
+| `python lab6.3-chat_keyless.py` | **Works** | It never reads the key |
+| `python lab4.1-chat_app_azure_code.py` | **Fails** with `KeyError: 'AZURE_OPENAI_API_KEY'` | It depends on the key |
+
+Remove the `#` afterwards so the Lab 4 scripts work again.
+
+**Check B: take the sign-in away.**
+
+```bash
+az logout
+python lab6.3-chat_keyless.py
+```
+
+| Signed out | Signed in again (`az login`) |
+| :--- | :--- |
+| Fails with `DefaultAzureCredential failed to retrieve a token` | Works |
+
+Together the two checks show the script depends on **who you are**, not on a secret you hold.
+
+### Lab 6.5: Turn keys off completely (optional)
+
+**Goal:** make Entra ID the only way in. This is the production setting.
+
+Do this only when you are ready: **every script that uses the key stops working**, including the Lab 4 and Lab 5 scripts and the later labs that reuse their client. To keep practising them, turn keys back on afterwards, or switch those scripts to the keyless client from Lab 6.3.
+
+1. **Azure portal** → Foundry resource → **Resource Management** → **Keys and Endpoint**.
+2. Disable key (local) authentication and save.
+
+<details>
+<summary>▶ Azure CLI: turn key authentication off, and back on</summary>
+
+```bash
+RESOURCE_ID=$(az cognitiveservices account show \
+    --name foundry-genai-lab-<yourname> \
+    --resource-group rg-genai-lab \
+    --query id --output tsv)
+
+# Off: only Entra ID sign-ins are accepted
+az resource update --ids $RESOURCE_ID --set properties.disableLocalAuth=true
+
+# On again: keys work as before
+az resource update --ids $RESOURCE_ID --set properties.disableLocalAuth=false
+```
+
+</details>
+
+**Expected result with keys off:**
+
+| Script | Result |
+| :--- | :--- |
+| `python lab6.3-chat_keyless.py` | Works |
+| `python lab4.1-chat_app_azure_code.py` | Fails with `401` or `403`, even though the key is correct |
+
+### How the same code runs on Azure
+
+Your laptop uses your `az login`. An app running on Azure has no person to sign in, so it gets its own identity:
+
+1. Open the app (App Service, Container Apps, AKS, Functions) → **Identity** → **System assigned** → **On** → **Save**. This is its **managed identity**.
+2. Repeat Lab 6.1, but on the **Members** tab choose **Managed identity** and pick the app.
+3. Deploy the Lab 6.3 code unchanged. `DefaultAzureCredential` finds the managed identity by itself.
+
+There is no key or password anywhere: not in the code, not in settings, not in a vault.
 
 ### Roles worth knowing
 
 | Role | Allows |
 | :--- | :--- |
-| **Cognitive Services OpenAI User** | Call deployed models. Least privilege for an app |
-| **Cognitive Services Contributor** | Create and manage deployments |
-| **Foundry User** | Build and test inside a Foundry project |
-| **Foundry Project Manager** | Foundry User plus manage the project and invite users |
-| **Foundry Account Owner** | Manage the resource and projects, create guardrails |
-| **Owner / Contributor** | Manage the Azure resource only. These do **not** include permission to call models |
+| **Foundry User** | Open a project, use the playground, call models, build and test. Least privilege for a developer or an app |
+| **Foundry Project Manager** | Foundry User, plus manage the project and give others the Foundry User role |
+| **Foundry Account Owner** | Create and manage resources, projects and model deployments, and assign Foundry User. Cannot build inside a project |
+| **Foundry Owner** | Everything: manage resources and projects, and build inside them |
+| **Owner** | Manage the Azure resource and assign any role. Does **not** include permission to work inside a project or call models |
+| **Contributor** | Manage the Azure resource and deploy models. Cannot assign roles, and cannot work inside a project or call models |
 
-Once every caller uses Entra ID, turn keys off completely: resource → **Resource Management** → **Keys and Endpoint** → disable local authentication.
+The Foundry roles were recently renamed. **Foundry User, Foundry Owner, Foundry Account Owner** and **Foundry Project Manager** may still appear as **Azure AI User, Azure AI Owner, Azure AI Account Owner** and **Azure AI Project Manager**.
+
+### Lab 6 checklist
+
+- [ ] Lab 6.1: **Check access** shows **Foundry User** for your account
+- [ ] Lab 6.2: `az account show` prints your account, and `azure-identity` is installed
+- [ ] Lab 6.3: the keyless script prints a greeting
+- [ ] Lab 6.4: it still works with the key commented out, and fails after `az logout`
+- [ ] Lab 6.5 (optional): with keys off, only the keyless script works
 
 ---
 
@@ -1671,7 +1856,7 @@ The **Import data** wizard in Azure AI Search builds the whole ingestion side fo
 
 ### Step 3: Role assignments
 
-All of these use **Access control (IAM)** → **+ Add** → **Add role assignment**, exactly as in Lab 6.
+All of these use **Access control (IAM)** → **+ Add** → **Add role assignment**, exactly as in Lab 6.1.
 
 | On this resource | Assign this role | To |
 | :--- | :--- | :--- |
@@ -2395,7 +2580,7 @@ Use **Foundry Project Manager** in place of Foundry User for a team lead who sho
 | :--- | :--- | :--- |
 | `404 DeploymentNotFound` | `model` is not your deployment name, or the base URL is missing `/openai/v1/` | Copy the deployment name from **Build** → **Models**; check the base URL |
 | `401 Unauthorized` | Wrong key, or key from a different resource | Re-copy **KEY 1** from **Keys and Endpoint** |
-| `401` / `403` with keyless auth | Role missing or not applied yet, or signed in to the wrong tenant | Assign **Cognitive Services OpenAI User**, wait a few minutes, run `az login` again |
+| `401` / `403` with keyless auth | Role missing or not applied yet, or signed in to the wrong tenant | Assign **Foundry User** (Lab 6.1), wait a few minutes, run `az login` again |
 | `429 Too Many Requests` | Tokens-per-minute limit reached | Retry with backoff, or raise the limit on the deployment |
 | `400` with code `content_filter` | Prompt blocked by the guardrail | Rephrase, or adjust the guardrail (Lab 9) |
 | `400` unsupported parameter | Parameter the model does not accept, such as `temperature` or `max_tokens` | Remove it; use `max_output_tokens`, reasoning effort and verbosity |
