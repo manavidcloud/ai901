@@ -2314,7 +2314,7 @@ Your `.env` now has six lines. The first four are from Lab 4 and stay as they ar
 | `SEARCH_INDEX` | Name of the index to query | Yes |
 
 **4. Create `lab7.6-rag_app.py`**
-
+Note: select your python enterprerter if using uv [ctrl+shift+p select your project where you created your uv env, brose python enterprerter, go to your path and select pyton.exe]
 ```python
 import os
 from dotenv import load_dotenv
@@ -2535,21 +2535,65 @@ In this lab the resources you create go in the workload group `rg-genai-lab`, an
 
 ### Lab 8.2: Restrict access (choose one option)
 
+**First, open the Networking page of your Foundry resource.** Both options start here.
+
+1. Open the **Azure portal**: https://portal.azure.com
+2. In the search bar at the top, type the name of the resource you created in Lab 1, `foundry-genai-lab-<yourname>`, and select it from the results. Its type is shown as **Foundry**. (Another way: **Resource groups** → `rg-genai-lab` → select `foundry-genai-lab-<yourname>` in the list.)
+3. You are now on that resource's **Overview** page. Look at the menu down the left side.
+4. In that left menu find the section heading **Resource Management** and expand it.
+5. Under it select **Networking**. The page shows the options **All networks**, **Selected networks** and **Disabled**.
+
+"Foundry resource" in this guide always means this one resource, `foundry-genai-lab-<yourname>`, in the resource group `rg-genai-lab`. It is not the Foundry portal (ai.azure.com) and not a project.
+
 #### Option 1: Allow only chosen networks or IPs
 
 The endpoint stays public, but only listed sources are let in. Simple, and enough for many internal tools.
 
-1. **Azure portal** → Foundry resource → **Resource Management** → **Networking**.
+1. Be on the **Networking** page of `foundry-genai-lab-<yourname>`, opened in the five steps above.
 2. Select **Selected networks**.
 3. Under virtual networks, add the existing network `vnet-genai-lab` (it is listed even though it is in `rg-genai-network`) and subnet `snet-apps`. The portal turns on the required service endpoint on that subnet.
-4. To keep working from your own machine, add your public IP under **Firewall** → **Address range**.
+4. To keep working from your own machine, add your public IP address under **Firewall** → **Address range**. How to find it is explained below these steps.
 5. **Save**.
+
+**How to find your public IP address for step 4**
+
+Your laptop has two addresses. The firewall needs the **public** one, which is how the internet sees you. It does not want the private one your router gives your laptop (such as `192.168.x.x` or `10.x.x.x`).
+
+Use any one of these:
+
+| Way | Do this | You get |
+| :--- | :--- | :--- |
+| Browser | Open https://api.ipify.org | One line, such as `203.0.113.45` |
+| Browser | Search the web for `what is my ip` | Your public IP at the top of the results |
+| Git Bash, macOS, Linux | `curl https://api.ipify.org` | The same address |
+| PowerShell | `Invoke-RestMethod https://api.ipify.org` | The same address |
+
+Use the IPv4 form, four numbers separated by dots. If a site shows a long address with colons, that is IPv6; use `api.ipify.org`, which returns IPv4.
+
+**What to type in the Address range box**
+
+CIDR is a way to write one address or a block of addresses. The number after the `/` says how many addresses the entry covers: the bigger the number, the fewer addresses.
+
+| You want to allow | Type this | Covers |
+| :--- | :--- | :--- |
+| Only your own machine | Your address alone, such as `203.0.113.45` | 1 address (the same as `/32`) |
+| A whole office network | The block your network team gives you, such as `203.0.113.0/24` | 256 addresses |
+| A larger company range | Such as `203.0.113.0/20` | 4,096 addresses |
+
+For this lab type your single address and nothing else.
+
+**Things that catch people out**
+
+* **A home address can change.** Most home connections get a new public IP now and then. If the script suddenly fails with `403`, check your IP again and update the entry.
+* **A VPN changes it.** With a VPN on, your public IP is the VPN's. Check the address in the same state you will run the script in.
+* **An office shares one address.** Everyone behind the same office connection has the same public IP, so allowing it allows all of them.
+* **A private address will not work.** If what you found starts with `192.168.`, `10.` or `172.16.` to `172.31.`, that is your private address. Use one of the sites above instead.
 
 #### Option 2: Private endpoint only
 
 No public path at all. This is the usual production choice.
 
-1. Same **Networking** page → select **Disabled** → **Save**.
+1. On the same **Networking** page of `foundry-genai-lab-<yourname>`, select **Disabled** → **Save**.
 2. Open the **Private endpoint connections** tab → **+ Private endpoint**.
 3. **Basics:** resource group **`rg-genai-lab`** (the endpoint belongs to the workload), name `pe-foundry-genai-lab`, region `East US 2` (must match the VNet).
 4. **Resource:** target sub-resource **account**.

@@ -3,16 +3,19 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from azure.search.documents import SearchClient
-from azure.search.documents.models import VectorizableTextQuery
+from azure.search.documents.models import VectorizableTextQuery 
 
 load_dotenv()
-credential = DefaultAzureCredential()
+credential = DefaultAzureCredential()          # your az login sign-in, used for both services
 
+# Client 1: the search index
 search = SearchClient(
     endpoint=os.environ["SEARCH_ENDPOINT"],
     index_name=os.environ["SEARCH_INDEX"],
     credential=credential,
 )
+
+# Client 2: the model
 llm = OpenAI(
     base_url=os.environ["AZURE_OPENAI_BASE_URL"],
     api_key=get_bearer_token_provider(credential, "https://ai.azure.com/.default"),

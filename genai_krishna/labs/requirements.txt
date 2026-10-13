@@ -1,3 +1,5 @@
 openai
 python-dotenv
+numpy
 azure-identity
+azure-search-documents
